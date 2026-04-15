@@ -871,7 +871,8 @@ class MainWindow:
     def __init__(self, root):
         self.root = root
         self.root.title(get_text("window_title"))
-        self.root.geometry("800x700")
+        self.root.geometry("900x750")
+        self.root.minsize(800, 650)
 
         load_config()
 
@@ -885,165 +886,442 @@ class MainWindow:
         self.transfer_speed_label = None
         self.remaining_time_label = None
 
+        self._setup_styles()
         self._create_widgets()
         self._start_services()
 
+    def _setup_styles(self):
+        style = ttk.Style()
+
+        try:
+            available_themes = style.theme_names()
+            if "clam" in available_themes:
+                style.theme_use("clam")
+            elif "alt" in available_themes:
+                style.theme_use("alt")
+        except:
+            pass
+
+        colors = {
+            "bg": "#F8FAFC",
+            "card_bg": "#FFFFFF",
+            "primary": "#3B82F6",
+            "primary_dark": "#2563EB",
+            "secondary": "#64748B",
+            "text": "#1E293B",
+            "text_light": "#64748B",
+            "border": "#E2E8F0",
+            "success": "#10B981",
+            "warning": "#F59E0B",
+            "error": "#EF4444",
+        }
+
+        self.root.configure(bg=colors["bg"])
+
+        style.configure("TFrame", background=colors["bg"])
+        style.configure("Card.TFrame", background=colors["card_bg"], relief="flat")
+        style.configure(
+            "TLabelFrame",
+            background=colors["card_bg"],
+            foreground=colors["text"],
+            bordercolor=colors["border"],
+            borderwidth=1,
+            relief="solid",
+        )
+
+        style.configure(
+            "TLabel",
+            background=colors["bg"],
+            foreground=colors["text"],
+            font=("Segoe UI", 9),
+        )
+        style.configure(
+            "Header.TLabel",
+            background=colors["bg"],
+            foreground=colors["primary"],
+            font=("Segoe UI", 11, "bold"),
+        )
+        style.configure(
+            "Bold.TLabel",
+            background=colors["bg"],
+            foreground=colors["text"],
+            font=("Segoe UI", 10, "bold"),
+        )
+        style.configure(
+            "Info.TLabel",
+            background=colors["bg"],
+            foreground=colors["text_light"],
+            font=("Segoe UI", 8),
+        )
+        style.configure(
+            "Card.TLabel",
+            background=colors["card_bg"],
+            foreground=colors["text"],
+            font=("Segoe UI", 9),
+        )
+
+        style.configure(
+            "TEntry",
+            fieldbackground="white",
+            background="white",
+            foreground=colors["text"],
+            bordercolor=colors["border"],
+            borderwidth=1,
+            relief="solid",
+            insertcolor=colors["primary"],
+            font=("Segoe UI", 9),
+        )
+        style.map(
+            "TEntry",
+            foreground=[("focus", colors["text"])],
+            bordercolor=[("focus", colors["primary"])],
+        )
+
+        style.configure(
+            "TButton",
+            background=colors["card_bg"],
+            foreground=colors["primary"],
+            bordercolor=colors["border"],
+            borderwidth=1,
+            relief="solid",
+            font=("Segoe UI", 9),
+            padding=(10, 6),
+        )
+        style.map(
+            "TButton",
+            background=[("active", colors["primary"])],
+            foreground=[("active", "white")],
+            bordercolor=[("active", colors["primary_dark"])],
+        )
+
+        style.configure(
+            "Primary.TButton",
+            background=colors["primary"],
+            foreground="white",
+            bordercolor=colors["primary"],
+            borderwidth=0,
+            relief="flat",
+            font=("Segoe UI", 10, "bold"),
+            padding=(12, 8),
+        )
+        style.map(
+            "Primary.TButton",
+            background=[("active", colors["primary_dark"])],
+            foreground=[("active", "white")],
+        )
+
+        style.configure(
+            "Accent.TButton",
+            background=colors["success"],
+            foreground="white",
+            bordercolor=colors["success"],
+            borderwidth=0,
+            relief="flat",
+            font=("Segoe UI", 11, "bold"),
+            padding=(15, 10),
+        )
+        style.map(
+            "Accent.TButton",
+            background=[("active", "#059669")],
+            foreground=[("active", "white")],
+        )
+
+        style.configure(
+            "Danger.TButton",
+            background=colors["error"],
+            foreground="white",
+            bordercolor=colors["error"],
+            borderwidth=0,
+            relief="flat",
+            font=("Segoe UI", 9),
+            padding=(10, 6),
+        )
+        style.map(
+            "Danger.TButton",
+            background=[("active", "#DC2626")],
+            foreground=[("active", "white")],
+        )
+
+        style.configure(
+            "TCombobox",
+            fieldbackground="white",
+            background="white",
+            foreground=colors["text"],
+            bordercolor=colors["border"],
+            borderwidth=1,
+            relief="solid",
+            arrowcolor=colors["text_light"],
+            font=("Segoe UI", 9),
+        )
+        style.map(
+            "TCombobox",
+            foreground=[("focus", colors["text"])],
+            bordercolor=[("focus", colors["primary"])],
+            fieldbackground=[("readonly", "white")],
+        )
+
+        style.configure(
+            "Horizontal.TProgressbar",
+            troughcolor=colors["border"],
+            background=colors["primary"],
+            borderwidth=0,
+            relief="flat",
+            thickness=8,
+        )
+
+        style.configure("TSeparator", background=colors["border"])
+
+        self.colors = colors
+
     def _create_widgets(self):
-        top_frame = ttk.Frame(self.root, padding=10)
-        top_frame.pack(fill=tk.X)
+        main_container = ttk.Frame(self.root, padding=16)
+        main_container.pack(fill=tk.BOTH, expand=True)
 
-        ttk.Label(top_frame, text=get_text("local_name")).pack(side=tk.LEFT)
+        header_frame = ttk.Frame(main_container)
+        header_frame.pack(fill=tk.X, pady=(0, 16))
+
+        info_container = ttk.Frame(header_frame, style="Card.TFrame", padding=12)
+        info_container.pack(fill=tk.X)
+
+        ttk.Label(info_container, text="📱", font=("Segoe UI", 14)).pack(
+            side=tk.LEFT, padx=(0, 8)
+        )
+        ttk.Label(
+            info_container, text=get_text("local_name"), style="Info.TLabel"
+        ).pack(side=tk.LEFT)
         self.name_label = ttk.Label(
-            top_frame, text=self.my_name, font=("Arial", 10, "bold")
+            info_container, text=self.my_name, style="Bold.TLabel"
         )
-        self.name_label.pack(side=tk.LEFT, padx=5)
+        self.name_label.pack(side=tk.LEFT, padx=(8, 16))
 
-        ttk.Label(top_frame, text=get_text("ip_label")).pack(side=tk.LEFT, padx=(20, 0))
+        ttk.Label(info_container, text="🌐", font=("Segoe UI", 14)).pack(
+            side=tk.LEFT, padx=(0, 8)
+        )
+        ttk.Label(info_container, text=get_text("ip_label"), style="Info.TLabel").pack(
+            side=tk.LEFT
+        )
         self.ip_label = ttk.Label(
-            top_frame, text=get_local_ip(), font=("Arial", 10, "bold")
+            info_container, text=get_local_ip(), style="Bold.TLabel"
         )
-        self.ip_label.pack(side=tk.LEFT, padx=5)
+        self.ip_label.pack(side=tk.LEFT, padx=(8, 16))
 
-        ttk.Label(top_frame, text=get_text("language")).pack(side=tk.LEFT, padx=(20, 0))
+        ttk.Label(info_container, text="🌍", font=("Segoe UI", 14)).pack(
+            side=tk.LEFT, padx=(0, 8)
+        )
+        ttk.Label(info_container, text=get_text("language"), style="Info.TLabel").pack(
+            side=tk.LEFT
+        )
         self.lang_var = tk.StringVar(value=current_lang)
         self.lang_combo = ttk.Combobox(
-            top_frame,
+            info_container,
             textvariable=self.lang_var,
             values=["zh", "en"],
             width=5,
             state="readonly",
         )
-        self.lang_combo.pack(side=tk.LEFT, padx=5)
+        self.lang_combo.pack(side=tk.LEFT, padx=8)
         self.lang_combo.bind("<<ComboboxSelected>>", self._on_language_change)
 
-        dir_frame = ttk.Frame(self.root, padding=10)
-        dir_frame.pack(fill=tk.X)
+        dir_container = ttk.Frame(main_container, style="Card.TFrame", padding=12)
+        dir_container.pack(fill=tk.X, pady=(0, 16))
 
-        ttk.Label(dir_frame, text=get_text("save_dir")).pack(side=tk.LEFT)
-        self.dir_entry = ttk.Entry(dir_frame)
-        self.dir_entry.insert(0, self.save_dir)
-        self.dir_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
-        ttk.Button(dir_frame, text=get_text("browse"), command=self._browse_dir).pack(
+        ttk.Label(dir_container, text="📁", font=("Segoe UI", 14)).pack(
+            side=tk.LEFT, padx=(0, 8)
+        )
+        ttk.Label(dir_container, text=get_text("save_dir"), style="TLabel").pack(
             side=tk.LEFT
         )
+        self.dir_entry = ttk.Entry(dir_container)
+        self.dir_entry.insert(0, self.save_dir)
+        self.dir_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=8)
+        ttk.Button(
+            dir_container,
+            text=get_text("browse"),
+            command=self._browse_dir,
+            style="Primary.TButton",
+        ).pack(side=tk.LEFT, padx=(8, 0))
 
-        ttk.Separator(self.root).pack(fill=tk.X, padx=10)
+        ttk.Separator(main_container, orient="horizontal").pack(fill=tk.X, pady=8)
 
-        mid_container = ttk.Frame(self.root, padding=10)
-        mid_container.pack(fill=tk.BOTH, expand=True)
+        mid_container = ttk.Frame(main_container)
+        mid_container.pack(fill=tk.BOTH, expand=True, pady=8)
         mid_frame = ttk.PanedWindow(mid_container, orient=tk.HORIZONTAL)
         mid_frame.pack(fill=tk.BOTH, expand=True)
 
-        left_frame = ttk.Frame(mid_frame)
+        left_frame = ttk.Frame(mid_frame, padding=12)
         mid_frame.add(left_frame, weight=1)
 
-        ttk.Label(left_frame, text=get_text("online_devices")).pack(anchor=tk.W)
-        self.device_listbox = tk.Listbox(left_frame, height=8)
-        self.device_listbox.pack(fill=tk.BOTH, expand=True, pady=5)
+        left_card = ttk.Frame(left_frame, style="Card.TFrame", padding=16)
+        left_card.pack(fill=tk.BOTH, expand=True)
 
-        manual_frame = ttk.LabelFrame(
-            left_frame, text=get_text("manual_add"), padding=5
+        ttk.Label(left_card, text="📡", font=("Segoe UI", 12)).pack(
+            anchor=tk.W, pady=(0, 4)
         )
-        manual_frame.pack(fill=tk.X, pady=(5, 0))
+        ttk.Label(
+            left_card, text=get_text("online_devices"), style="Header.TLabel"
+        ).pack(anchor=tk.W, pady=(0, 12))
 
-        ip_frame = ttk.Frame(manual_frame)
-        ip_frame.pack(fill=tk.X)
+        add_device_frame = ttk.Frame(left_card, padding=10)
+        add_device_frame.pack(fill=tk.X, pady=(0, 12))
 
-        ttk.Label(ip_frame, text=get_text("ip")).pack(side=tk.LEFT)
+        ttk.Label(
+            add_device_frame, text=get_text("manual_add"), style="Bold.TLabel"
+        ).pack(anchor=tk.W, pady=(0, 8))
+
+        input_row = ttk.Frame(add_device_frame)
+        input_row.pack(fill=tk.X, pady=(0, 8))
+
+        ttk.Label(input_row, text=get_text("ip"), style="TLabel").pack(side=tk.LEFT)
         ip_history = load_ip_history()
-        self.manual_ip_entry = ttk.Combobox(ip_frame, values=ip_history)
+        self.manual_ip_entry = ttk.Combobox(input_row, values=ip_history, width=15)
         if ip_history:
             self.manual_ip_entry.set(ip_history[0])
-        self.manual_ip_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
+        self.manual_ip_entry.pack(side=tk.LEFT, padx=(8, 12))
         self.manual_ip_entry.bind("<Return>", lambda e: self._add_manual_device())
 
-        name_frame = ttk.Frame(manual_frame)
-        name_frame.pack(fill=tk.X, pady=(5, 0))
+        ttk.Label(input_row, text=get_text("name"), style="TLabel").pack(side=tk.LEFT)
+        self.manual_name_entry = ttk.Entry(input_row, width=15)
+        self.manual_name_entry.pack(side=tk.LEFT, padx=8)
 
-        ttk.Label(name_frame, text=get_text("name")).pack(side=tk.LEFT)
-        self.manual_name_entry = ttk.Entry(name_frame)
-        self.manual_name_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
-
-        btn_frame = ttk.Frame(manual_frame)
-        btn_frame.pack(fill=tk.X, pady=(5, 0))
+        btn_row = ttk.Frame(add_device_frame)
+        btn_row.pack(fill=tk.X, pady=(0, 8))
 
         ttk.Button(
-            btn_frame, text=get_text("add"), command=self._add_manual_device
-        ).pack(side=tk.LEFT, fill=tk.X, expand=True)
+            btn_row,
+            text="➕ " + get_text("add"),
+            command=self._add_manual_device,
+            style="Primary.TButton",
+        ).pack(side=tk.LEFT, padx=(0, 8))
         ttk.Button(
-            btn_frame,
-            text=get_text("remove_selected"),
+            btn_row,
+            text="➖ " + get_text("remove_selected"),
             command=self._remove_selected_device,
-        ).pack(side=tk.LEFT, padx=(5, 0))
+        ).pack(side=tk.LEFT, padx=(0, 8))
 
-        scan_frame = ttk.Frame(manual_frame)
-        scan_frame.pack(fill=tk.X, pady=(5, 0))
+        scan_row = ttk.Frame(add_device_frame)
+        scan_row.pack(fill=tk.X)
 
-        ttk.Label(scan_frame, text=get_text("timeout_setting")).pack(side=tk.LEFT)
-        self.timeout_entry = ttk.Entry(scan_frame, width=5)
+        ttk.Label(scan_row, text=get_text("timeout_setting"), style="TLabel").pack(
+            side=tk.LEFT
+        )
+        self.timeout_entry = ttk.Entry(scan_row, width=5)
         self.timeout_entry.insert(0, "1")
-        self.timeout_entry.pack(side=tk.LEFT, padx=5)
+        self.timeout_entry.pack(side=tk.LEFT, padx=8)
         ttk.Button(
-            scan_frame, text=get_text("scan_network"), command=self._scan_network
-        ).pack(side=tk.LEFT, fill=tk.X, expand=True)
+            scan_row,
+            text="🔍 " + get_text("scan_network"),
+            command=self._scan_network,
+            style="Primary.TButton",
+        ).pack(side=tk.LEFT, padx=(8, 0))
 
-        right_frame = ttk.Frame(mid_frame)
+        self.device_listbox = tk.Listbox(
+            left_card,
+            height=10,
+            bg="white",
+            fg="#1E293B",
+            font=("Segoe UI", 9),
+            selectbackground="#3B82F6",
+            selectforeground="white",
+            relief="flat",
+            borderwidth=0,
+            highlightthickness=1,
+            highlightbackground="#E2E8F0",
+        )
+        self.device_listbox.pack(fill=tk.BOTH, expand=True)
+
+        right_frame = ttk.Frame(mid_frame, padding=12)
         mid_frame.add(right_frame, weight=1)
 
-        ttk.Label(right_frame, text=get_text("select_file")).pack(anchor=tk.W)
-        self.file_entry = ttk.Entry(right_frame)
-        self.file_entry.pack(fill=tk.X, pady=5)
+        right_card = ttk.Frame(right_frame, style="Card.TFrame", padding=16)
+        right_card.pack(fill=tk.BOTH, expand=True)
 
-        file_btn_frame = ttk.Frame(right_frame)
-        file_btn_frame.pack(fill=tk.X)
-        ttk.Button(
-            file_btn_frame, text=get_text("browse"), command=self._browse_file
-        ).pack(side=tk.LEFT, fill=tk.X, expand=True)
-        ttk.Button(
-            file_btn_frame, text=get_text("select_files"), command=self._browse_files
-        ).pack(side=tk.LEFT, padx=(5, 0), fill=tk.X, expand=True)
+        ttk.Label(right_card, text="📎", font=("Segoe UI", 12)).pack(
+            anchor=tk.W, pady=(0, 4)
+        )
+        ttk.Label(right_card, text=get_text("select_file"), style="Header.TLabel").pack(
+            anchor=tk.W, pady=(0, 8)
+        )
+        self.file_entry = ttk.Entry(right_card)
+        self.file_entry.pack(fill=tk.X, pady=(0, 8))
 
-        ttk.Separator(right_frame).pack(fill=tk.X, pady=10)
+        file_btn_frame = ttk.Frame(right_card)
+        file_btn_frame.pack(fill=tk.X, pady=(0, 12))
         ttk.Button(
-            right_frame,
-            text=get_text("send"),
+            file_btn_frame,
+            text=get_text("browse"),
+            command=self._browse_file,
+            style="Primary.TButton",
+        ).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
+        ttk.Button(
+            file_btn_frame,
+            text=get_text("select_files"),
+            command=self._browse_files,
+            style="Primary.TButton",
+        ).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(4, 0))
+
+        ttk.Separator(right_card, orient="horizontal").pack(fill=tk.X, pady=12)
+
+        ttk.Button(
+            right_card,
+            text="📤 " + get_text("send"),
             command=self._send_file,
             style="Accent.TButton",
-        ).pack(fill=tk.X)
+        ).pack(fill=tk.X, pady=(0, 8))
         ttk.Button(
-            right_frame, text=get_text("cancel"), command=self._cancel_transfer
-        ).pack(fill=tk.X, pady=(5, 0))
+            right_card,
+            text="❌ " + get_text("cancel"),
+            command=self._cancel_transfer,
+            style="Danger.TButton",
+        ).pack(fill=tk.X, pady=(0, 8))
         ttk.Button(
-            right_frame, text=get_text("view_history"), command=self._view_history
+            right_card,
+            text="📜 " + get_text("view_history"),
+            command=self._view_history,
+            style="Primary.TButton",
         ).pack(fill=tk.X)
 
-        ttk.Separator(self.root).pack(fill=tk.X, padx=10)
+        progress_container = ttk.Frame(main_container, style="Card.TFrame", padding=12)
+        progress_container.pack(fill=tk.X, pady=(8, 0))
 
-        progress_frame = ttk.Frame(self.root, padding=10)
-        progress_frame.pack(fill=tk.X)
-        ttk.Label(progress_frame, text=get_text("progress")).pack(side=tk.LEFT)
-        self.progress = ttk.Progressbar(progress_frame, mode="determinate")
-        self.progress.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
+        ttk.Label(progress_container, text=get_text("progress"), style="TLabel").pack(
+            side=tk.LEFT
+        )
+        self.progress = ttk.Progressbar(
+            progress_container, mode="determinate", length=400
+        )
+        self.progress.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=12)
 
-        speed_frame = ttk.Frame(self.root, padding=(10, 5))
-        speed_frame.pack(fill=tk.X)
+        speed_container = ttk.Frame(main_container, padding=(0, 0, 0, 8))
+        speed_container.pack(fill=tk.X)
+
         self.transfer_speed_label = ttk.Label(
-            speed_frame, text=f"{get_text('speed')} --"
+            speed_container, text=f"⚡ {get_text('speed')} --", style="Bold.TLabel"
         )
-        self.transfer_speed_label.pack(side=tk.LEFT)
+        self.transfer_speed_label.pack(side=tk.LEFT, padx=(12, 0))
         self.remaining_time_label = ttk.Label(
-            speed_frame, text=f"{get_text('remaining')} --"
+            speed_container, text=f"⏱️  {get_text('remaining')} --", style="Bold.TLabel"
         )
-        self.remaining_time_label.pack(side=tk.LEFT, padx=(20, 0))
+        self.remaining_time_label.pack(side=tk.LEFT, padx=(24, 0))
 
-        log_frame = ttk.Frame(self.root, padding=10)
-        log_frame.pack(fill=tk.BOTH, expand=True)
-        ttk.Label(log_frame, text=get_text("log")).pack(anchor=tk.W)
-        self.log_text = scrolledtext.ScrolledText(log_frame, height=6, state="disabled")
+        log_container = ttk.Frame(main_container, padding=(12, 12, 12, 0))
+        log_container.pack(fill=tk.BOTH, expand=True)
+
+        ttk.Label(
+            log_container, text="📝 " + get_text("log"), style="Header.TLabel"
+        ).pack(anchor=tk.W, pady=(0, 8))
+        self.log_text = scrolledtext.ScrolledText(
+            log_container,
+            height=6,
+            state="disabled",
+            font=("Segoe UI", 9),
+            bg="white",
+            fg="#1E293B",
+            relief="flat",
+            borderwidth=1,
+            highlightthickness=1,
+            highlightbackground="#E2E8F0",
+        )
         self.log_text.pack(fill=tk.BOTH, expand=True)
-
-        style = ttk.Style()
-        style.configure("Accent.TButton", font=("Arial", 10, "bold"))
 
     def _start_services(self):
         self.discovery = DiscoveryService(self.my_name, self._on_devices_update)
@@ -1146,8 +1424,12 @@ class MainWindow:
 
     def _update_device_list(self):
         self.device_listbox.delete(0, tk.END)
+        now = time.time()
         for d in self.devices:
-            label = f"{d['name']} ({d['ip']})"
+            is_online = (now - d.get("last_seen", 0)) < BROADCAST_INTERVAL * 3
+            status_icon = "🟢 " if is_online else "🔴 "
+
+            label = f"{status_icon}{d['name']} ({d['ip']})"
             if d.get("manual", False):
                 label += f" [{get_text('manual_device')}]"
             self.device_listbox.insert(tk.END, label)
@@ -1241,9 +1523,23 @@ class MainWindow:
 
         history_window = tk.Toplevel(self.root)
         history_window.title(get_text("transfer_history"))
-        history_window.geometry("600x400")
+        history_window.geometry("650x450")
+        history_window.configure(bg=self.colors["bg"])
 
-        text = scrolledtext.ScrolledText(history_window, state="disabled")
+        container = ttk.Frame(history_window, padding=16)
+        container.pack(fill=tk.BOTH, expand=True)
+
+        text = scrolledtext.ScrolledText(
+            container,
+            state="disabled",
+            font=("Segoe UI", 9),
+            bg="white",
+            fg="#1E293B",
+            relief="flat",
+            borderwidth=1,
+            highlightthickness=1,
+            highlightbackground="#E2E8F0",
+        )
         text.pack(fill=tk.BOTH, expand=True)
 
         text.config(state="normal")
