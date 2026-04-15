@@ -12,12 +12,15 @@ jobs:
         include:
           - os: ubuntu-latest
             name: linux
+            ext: ""
             path: dist/SimpleTransferEnhanced
           - os: windows-latest
             name: windows
+            ext: .exe
             path: dist/SimpleTransferEnhanced.exe
           - os: macos-latest
             name: macos
+            ext: .app
             path: dist/SimpleTransferEnhanced.app
 
     runs-on: ${{ matrix.os }}
@@ -57,10 +60,25 @@ jobs:
         with:
           path: artifacts
 
+      - name: Prepare files
+        run: |
+          cd artifacts
+          # Linux - already executable
+          # Windows - already .exe
+          # macOS - zip it
+          if [ -d "SimpleTransferEnhanced-macos/SimpleTransferEnhanced.app" ]; then
+            cd SimpleTransferEnhanced-macos
+            zip -r ../SimpleTransferEnhanced-macos.zip SimpleTransferEnhanced.app
+            cd ..
+          fi
+
       - name: Create Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
-          files: artifacts/**/*.exe
+          files: |
+            artifacts/SimpleTransferEnhanced-linux/SimpleTransferEnhanced
+            artifacts/SimpleTransferEnhanced-windows/SimpleTransferEnhanced.exe
+            artifacts/SimpleTransferEnhanced-macos.zip
           draft: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
