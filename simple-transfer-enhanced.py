@@ -990,7 +990,7 @@ class MainWindow:
         right_frame = ttk.Frame(mid_frame)
         mid_frame.add(right_frame, weight=1)
 
-        ttk.Label(right_frame, text=get_text("select_file")).pack(anchor=tk.W.W)
+        ttk.Label(right_frame, text=get_text("select_file")).pack(anchor=tk.W)
         self.file_entry = ttk.Entry(right_frame)
         self.file_entry.pack(fill=tk.X, pady=5)
 
