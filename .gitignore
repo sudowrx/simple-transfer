@@ -1,0 +1,8 @@
+*
+!.gitignore
+!.github/
+!*.py
+!*.spec
+!*.md
+!dist/
+!dist/*
