@@ -532,7 +532,15 @@ class DiscoveryService:
 
                 with lock:
                     scanned_count += 1
-                    if scanned_count % 25 == 0 and self.log_callback:
+                    # Log progress more frequently for better UX
+                    if scanned_count % 10 == 0 and self.log_callback:
+                        self.log_callback(
+                            f"{get_text('scan_progress')} {scanned_count}/{total_hosts}"
+                        )
+                    # Always log the first and last updates
+                    elif (
+                        scanned_count == 1 or scanned_count == total_hosts
+                    ) and self.log_callback:
                         self.log_callback(
                             f"{get_text('scan_progress')} {scanned_count}/{total_hosts}"
                         )
@@ -701,30 +709,42 @@ class TransferServer:
                 if self.running:
                     self.log_callback(f"错误: {e}")
 
-    def _handle_client(self, sock, raddr):
+    def _request_receive_confirmation(self, addr, filename, filesize, sock, header):
+        """Request user confirmation before receiving file"""
+        import tkinter as tk
+        from tkinter import messagebox
+
+        message = f"接收文件确认\n\n发送方 IP: {addr}\n文件名: {filename}\n文件大小: {format_size(filesize)}\n\n是否接收此文件？"
+        result = messagebox.askyesno("文件接收确认", message)
+
+        if result:
+            # User confirmed, proceed with transfer
+            threading.Thread(
+                target=self._proceed_with_transfer,
+                args=(
+                    sock,
+                    addr,
+                    header,
+                    filename,
+                    filesize,
+                    header.get("checksum", ""),
+                    header.get("resume_from", 0),
+                ),
+                daemon=True,
+            ).start()
+        else:
+            # User rejected, close connection
+            try:
+                sock.close()
+            except:
+                pass
+            self.log_callback(f"已拒绝来自 {addr} 的文件: {filename}")
+
+    def _proceed_with_transfer(
+        self, sock, addr, header, filename, filesize, checksum, resume_from
+    ):
+        """Proceed with file transfer after confirmation"""
         try:
-            addr = raddr[0]
-            self.log_callback(
-                f"{get_text('connection_from')} {addr} {get_text('connection')}"
-            )
-
-            # Add sender to device list
-            if self.device_callback:
-                self.device_callback(addr, f"发送方 ({addr})")
-
-            header_data = sock.recv(4)
-            if not header_data:
-                return
-            header_len = struct.unpack("!I", header_data)[0]
-
-            header_json = sock.recv(header_len).decode()
-            header = json.loads(header_json)
-
-            filename = header["filename"]
-            filesize = header["filesize"]
-            checksum = header.get("checksum", "")
-            resume_from = header.get("resume_from", 0)
-
             save_path = os.path.join(self.save_dir, filename)
             if os.path.exists(save_path) and resume_from == 0:
                 name, ext = os.path.splitext(filename)
@@ -812,6 +832,43 @@ class TransferServer:
             self.log_callback(f"接收失败: {e}")
         finally:
             sock.close()
+
+    def _handle_client(self, sock, raddr):
+        try:
+            addr = raddr[0]
+            self.log_callback(
+                f"{get_text('connection_from')} {addr} {get_text('connection')}"
+            )
+
+            header_data = sock.recv(4)
+            if not header_data:
+                return
+            header_len = struct.unpack("!I", header_data)[0]
+
+            header_json = sock.recv(header_len).decode()
+            header = json.loads(header_json)
+
+            filename = header["filename"]
+            filesize = header["filesize"]
+
+            if hasattr(self, "root_ref") and self.root_ref:
+                self.root_ref.after(
+                    0,
+                    lambda: self._request_receive_confirmation(
+                        addr, filename, filesize, sock, header
+                    ),
+                )
+            else:
+                self._request_receive_confirmation(
+                    addr, filename, filesize, sock, header
+                )
+
+        except Exception as e:
+            self.log_callback(f"接收失败: {e}")
+            try:
+                sock.close()
+            except:
+                pass
 
 
 class TransferClient:
@@ -1465,6 +1522,7 @@ class MainWindow:
             self._on_speed,
             self._on_device_received,
         )
+        self.server.root_ref = self.root
         self.server.start()
 
         self._log(f"{get_text('service_started')} {self.save_dir}")
@@ -1563,11 +1621,13 @@ class MainWindow:
     def _update_device_list(self):
         self.device_listbox.delete(0, tk.END)
         for d in self.devices:
+            # Green for: manual devices OR devices with recent last_seen (scanned)
             is_online = (time.time() - d.get("last_seen", 0)) < BROADCAST_INTERVAL * 3
-            status_icon = "🟢 " if is_online or d.get("manual", False) else "🔴 "
+            is_manual = d.get("manual", False)
+            status_icon = "🟢 " if is_online or is_manual else "🔴 "
 
             label = f"{status_icon}{d['name']} ({d['ip']})"
-            if d.get("manual", False):
+            if is_manual:
                 label += f" [{get_text('manual_device')}]"
             self.device_listbox.insert(tk.END, label)
 
