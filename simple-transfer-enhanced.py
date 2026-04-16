@@ -235,7 +235,6 @@ def save_config():
 
 
 def get_local_ip():
-    """获取本机 IP"""
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(("8.8.8.8", 80))
@@ -244,6 +243,74 @@ def get_local_ip():
         return ip
     except:
         return "127.0.0.1"
+
+
+def get_subnet_mask():
+    """获取子网掩码"""
+    import platform
+
+    try:
+        if platform.system() == "Windows":
+            import subprocess
+
+            result = subprocess.run(
+                ["ipconfig"],
+                capture_output=True,
+                text=True,
+                encoding="gbk" if platform.system() == "Windows" else "utf-8",
+            )
+
+            lines = result.stdout.split("\n")
+            local_ip = get_local_ip()
+
+            for i, line in enumerate(lines):
+                if "IPv4" in line or "IPv4" in lines[i - 1] if i > 0 else False:
+                    for j in range(i, min(i + 10, len(lines))):
+                        if "子网掩码" in lines[j] or "Subnet Mask" in lines[j]:
+                            mask = lines[j].split(":")[-1].strip()
+                            return mask
+        else:
+            import subprocess
+
+            result = subprocess.run(
+                ["ifconfig"]
+                if platform.system() == "Darwin"
+                else ["ip", "addr", "show"],
+                capture_output=True,
+                text=True,
+            )
+
+            local_ip = get_local_ip()
+            lines = result.stdout.split("\n")
+
+            for i, line in enumerate(lines):
+                if local_ip in line or ("inet " + local_ip.split(".")[0]) in line:
+                    for j in range(i, min(i + 10, len(lines))):
+                        if "netmask" in lines[j]:
+                            mask = lines[j].split("netmask")[-1].strip()
+                            return mask
+    except:
+        pass
+
+    return "255.255.255.0"
+
+
+def calculate_network_range(ip, mask):
+    """根据 IP 和子网掩码计算网络范围"""
+    ip_parts = [int(x) for x in ip.split(".")]
+    mask_parts = [int(x) for x in mask.split(".")]
+
+    network_parts = []
+    broadcast_parts = []
+
+    for i in range(4):
+        network_parts.append(ip_parts[i] & mask_parts[i])
+        broadcast_parts.append(ip_parts[i] | (~mask_parts[i] & 255))
+
+    network_ip = ".".join(map(str, network_parts))
+    broadcast_ip = ".".join(map(str, broadcast_parts))
+
+    return network_ip, broadcast_ip
 
 
 def get_hostname():
@@ -408,42 +475,87 @@ class DiscoveryService:
         self.running = False
 
     def scan_network(self, subnet=None, timeout=1.0):
-        """扫描本地网络查找设备"""
+        """主动扫描本地网络查找设备"""
         self.scan_timeout = timeout
 
+        local_ip = get_local_ip()
+        mask = get_subnet_mask()
+
         if not subnet:
-            local_ip = get_local_ip()
-            parts = local_ip.split(".")
-            subnet = f"{parts[0]}.{parts[1]}.{parts[2]}"
+            network_start, network_end = calculate_network_range(local_ip, mask)
+            if self.log_callback:
+                self.log_callback(
+                    f"{get_text('scanning_network')} {network_start} - {network_end}"
+                )
+        else:
+            network_start, network_end = calculate_network_range(
+                f"{subnet}.1", "255.255.255.0"
+            )
+            if self.log_callback:
+                self.log_callback(
+                    f"{get_text('scanning_network')} {network_start} - {network_end}"
+                )
 
-        if self.log_callback:
-            self.log_callback(f"{get_text('scanning_network')} {subnet}.0/24")
+        found_devices = set()
+        scanned_count = 0
+        total_hosts = 254
+        lock = threading.Lock()
 
-        found_devices = []
-
-        for i in range(1, 255):
-            if not self.running:
-                break
-
-            target_ip = f"{subnet}.{i}"
-
-            if i % 25 == 0 and self.log_callback:
-                self.log_callback(f"{get_text('scan_progress')} {i}/254")
-
+        def check_port(ip, port):
             try:
                 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 sock.settimeout(timeout)
-                result = sock.connect_ex((target_ip, DISCOVERY_PORT))
+                result = sock.connect_ex((ip, port))
                 sock.close()
-
-                if result == 0:
-                    found_devices.append(target_ip)
-                    if self.log_callback:
-                        self.log_callback(
-                            f"{get_text('discovered_device')} {target_ip}"
-                        )
+                return result == 0
             except:
-                pass
+                return False
+
+        def scan_host(host_ip):
+            nonlocal scanned_count
+            ports_to_check = [DISCOVERY_PORT, TRANSFER_PORT]
+
+            for port in ports_to_check:
+                if not self.running:
+                    break
+
+                if check_port(host_ip, port):
+                    with lock:
+                        if host_ip not in found_devices:
+                            found_devices.add(host_ip)
+                            if self.log_callback:
+                                self.log_callback(
+                                    f"{get_text('discovered_device')} {host_ip} (port {port})"
+                                )
+                    break
+
+            with lock:
+                scanned_count += 1
+                if scanned_count % 25 == 0 and self.log_callback:
+                    self.log_callback(
+                        f"{get_text('scan_progress')} {scanned_count}/{total_hosts}"
+                    )
+
+        start_parts = [int(x) for x in network_start.split(".")]
+        end_parts = [int(x) for x in network_end.split(".")]
+
+        threads = []
+        for i in range(start_parts[3], end_parts[3] + 1):
+            if not self.running:
+                break
+
+            target_ip = f"{start_parts[0]}.{start_parts[1]}.{start_parts[2]}.{i}"
+            thread = threading.Thread(target=scan_host, args=(target_ip,), daemon=True)
+            thread.start()
+            threads.append(thread)
+
+            if len(threads) >= 50:
+                for t in threads:
+                    t.join()
+                threads.clear()
+
+        for thread in threads:
+            thread.join()
 
         if found_devices:
             if self.log_callback:
@@ -451,7 +563,7 @@ class DiscoveryService:
                     f"{get_text('scan_complete_found')} {len(found_devices)} 个设备"
                 )
 
-            for ip in found_devices:
+            for ip in sorted(found_devices):
                 self.add_manual_device(ip, name=f"{get_text('scan_device')} ({ip})")
         else:
             if self.log_callback:
