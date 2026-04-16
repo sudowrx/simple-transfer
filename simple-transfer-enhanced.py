@@ -474,7 +474,7 @@ class DiscoveryService:
     def stop(self):
         self.running = False
 
-    def scan_network(self, subnet=None, timeout=1.0):
+    def scan_network(self, subnet=None, timeout=1.0, done_callback=None):
         """主动扫描本地网络查找设备"""
         try:
             self.scan_timeout = timeout
@@ -576,9 +576,8 @@ class DiscoveryService:
 
                 for ip in sorted(found_devices):
                     self.add_manual_device(ip, name=f"{get_text('scan_device')} ({ip})")
-            else:
-                if self.log_callback:
-                    self.log_callback(get_text("scan_complete_none"))
+            if done_callback:
+                done_callback()
         except Exception as e:
             if self.log_callback:
                 self.log_callback(f"扫描网络失败: {e}")
@@ -840,6 +839,9 @@ class TransferServer:
             self.log_callback(
                 f"{get_text('connection_from')} {addr} {get_text('connection')}"
             )
+            # Add sender to device list when receiving file
+            if self.device_callback:
+                self.device_callback(addr, f"发送方 ({addr})")
 
             header_data = sock.recv(4)
             if not header_data:
@@ -1586,7 +1588,9 @@ class MainWindow:
             timeout = 1.0
 
         threading.Thread(
-            target=self.discovery.scan_network, args=(None, timeout), daemon=True
+            target=self.discovery.scan_network,
+            args=(None, timeout, self._update_device_list),
+            daemon=True
         ).start()
 
     def _on_language_change(self, event):
