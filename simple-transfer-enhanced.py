@@ -476,98 +476,104 @@ class DiscoveryService:
 
     def scan_network(self, subnet=None, timeout=1.0):
         """主动扫描本地网络查找设备"""
-        self.scan_timeout = timeout
+        try:
+            self.scan_timeout = timeout
 
-        local_ip = get_local_ip()
-        mask = get_subnet_mask()
+            local_ip = get_local_ip()
+            mask = get_subnet_mask()
 
-        if not subnet:
-            network_start, network_end = calculate_network_range(local_ip, mask)
-            if self.log_callback:
-                self.log_callback(
-                    f"{get_text('scanning_network')} {network_start} - {network_end}"
+            if not subnet:
+                network_start, network_end = calculate_network_range(local_ip, mask)
+                if self.log_callback:
+                    self.log_callback(
+                        f"{get_text('scanning_network')} {network_start} - {network_end}"
+                    )
+            else:
+                network_start, network_end = calculate_network_range(
+                    f"{subnet}.1", "255.255.255.0"
                 )
-        else:
-            network_start, network_end = calculate_network_range(
-                f"{subnet}.1", "255.255.255.0"
-            )
-            if self.log_callback:
-                self.log_callback(
-                    f"{get_text('scanning_network')} {network_start} - {network_end}"
-                )
+                if self.log_callback:
+                    self.log_callback(
+                        f"{get_text('scanning_network')} {network_start} - {network_end}"
+                    )
 
-        found_devices = set()
-        scanned_count = 0
-        total_hosts = 254
-        lock = threading.Lock()
+            found_devices = set()
+            scanned_count = 0
+            total_hosts = 254
+            lock = threading.Lock()
 
-        def check_port(ip, port):
-            try:
-                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock.settimeout(timeout)
-                result = sock.connect_ex((ip, port))
-                sock.close()
-                return result == 0
-            except:
-                return False
+            def check_port(ip, port):
+                try:
+                    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    sock.settimeout(timeout)
+                    result = sock.connect_ex((ip, port))
+                    sock.close()
+                    return result == 0
+                except:
+                    return False
 
-        def scan_host(host_ip):
-            nonlocal scanned_count
-            ports_to_check = [DISCOVERY_PORT, TRANSFER_PORT]
+            def scan_host(host_ip):
+                nonlocal scanned_count
+                ports_to_check = [DISCOVERY_PORT, TRANSFER_PORT]
 
-            for port in ports_to_check:
+                for port in ports_to_check:
+                    if not self.running:
+                        break
+
+                    if check_port(host_ip, port):
+                        with lock:
+                            if host_ip not in found_devices:
+                                found_devices.add(host_ip)
+                                if self.log_callback:
+                                    self.log_callback(
+                                        f"{get_text('discovered_device')} {host_ip} (port {port})"
+                                    )
+                        break
+
+                with lock:
+                    scanned_count += 1
+                    if scanned_count % 25 == 0 and self.log_callback:
+                        self.log_callback(
+                            f"{get_text('scan_progress')} {scanned_count}/{total_hosts}"
+                        )
+
+            start_parts = [int(x) for x in network_start.split(".")]
+            end_parts = [int(x) for x in network_end.split(".")]
+
+            threads = []
+            for i in range(start_parts[3], end_parts[3] + 1):
                 if not self.running:
                     break
 
-                if check_port(host_ip, port):
-                    with lock:
-                        if host_ip not in found_devices:
-                            found_devices.add(host_ip)
-                            if self.log_callback:
-                                self.log_callback(
-                                    f"{get_text('discovered_device')} {host_ip} (port {port})"
-                                )
-                    break
+                target_ip = f"{start_parts[0]}.{start_parts[1]}.{start_parts[2]}.{i}"
+                thread = threading.Thread(
+                    target=scan_host, args=(target_ip,), daemon=True
+                )
+                thread.start()
+                threads.append(thread)
 
-            with lock:
-                scanned_count += 1
-                if scanned_count % 25 == 0 and self.log_callback:
+                if len(threads) >= 50:
+                    for t in threads:
+                        t.join()
+                    threads.clear()
+
+            for thread in threads:
+                thread.join()
+
+            if found_devices:
+                if self.log_callback:
                     self.log_callback(
-                        f"{get_text('scan_progress')} {scanned_count}/{total_hosts}"
+                        f"{get_text('scan_complete_found')} {len(found_devices)} 个设备"
                     )
 
-        start_parts = [int(x) for x in network_start.split(".")]
-        end_parts = [int(x) for x in network_end.split(".")]
-
-        threads = []
-        for i in range(start_parts[3], end_parts[3] + 1):
-            if not self.running:
-                break
-
-            target_ip = f"{start_parts[0]}.{start_parts[1]}.{start_parts[2]}.{i}"
-            thread = threading.Thread(target=scan_host, args=(target_ip,), daemon=True)
-            thread.start()
-            threads.append(thread)
-
-            if len(threads) >= 50:
-                for t in threads:
-                    t.join()
-                threads.clear()
-
-        for thread in threads:
-            thread.join()
-
-        if found_devices:
+                for ip in sorted(found_devices):
+                    self.add_manual_device(ip, name=f"{get_text('scan_device')} ({ip})")
+            else:
+                if self.log_callback:
+                    self.log_callback(get_text("scan_complete_none"))
+        except Exception as e:
             if self.log_callback:
-                self.log_callback(
-                    f"{get_text('scan_complete_found')} {len(found_devices)} 个设备"
-                )
-
-            for ip in sorted(found_devices):
-                self.add_manual_device(ip, name=f"{get_text('scan_device')} ({ip})")
-        else:
-            if self.log_callback:
-                self.log_callback(get_text("scan_complete_none"))
+                self.log_callback(f"扫描网络失败: {e}")
 
     def _listen(self):
         """监听广播"""
@@ -642,11 +648,19 @@ class DiscoveryService:
 class TransferServer:
     """接收文件服务器"""
 
-    def __init__(self, save_dir, progress_callback, log_callback, speed_callback=None):
+    def __init__(
+        self,
+        save_dir,
+        progress_callback,
+        log_callback,
+        speed_callback=None,
+        device_callback=None,
+    ):
         self.save_dir = save_dir
         self.progress_callback = progress_callback
         self.log_callback = log_callback
         self.speed_callback = speed_callback
+        self.device_callback = device_callback
         self.running = False
         self.server_socket = None
 
@@ -693,6 +707,10 @@ class TransferServer:
             self.log_callback(
                 f"{get_text('connection_from')} {addr} {get_text('connection')}"
             )
+
+            # Add sender to device list
+            if self.device_callback:
+                self.device_callback(addr, f"发送方 ({addr})")
 
             header_data = sock.recv(4)
             if not header_data:
@@ -1441,7 +1459,11 @@ class MainWindow:
         self.discovery.start()
 
         self.server = TransferServer(
-            self.save_dir, self._on_progress, self._log, self._on_speed
+            self.save_dir,
+            self._on_progress,
+            self._log,
+            self._on_speed,
+            self._on_device_received,
         )
         self.server.start()
 
@@ -1534,12 +1556,15 @@ class MainWindow:
         self.devices = devices
         self.root.after(0, self._update_device_list)
 
+    def _on_device_received(self, ip, name):
+        if self.discovery:
+            self.discovery.add_manual_device(ip, name)
+
     def _update_device_list(self):
         self.device_listbox.delete(0, tk.END)
-        now = time.time()
         for d in self.devices:
-            is_online = (now - d.get("last_seen", 0)) < BROADCAST_INTERVAL * 3
-            status_icon = "🟢 " if is_online else "🔴 "
+            is_online = (time.time() - d.get("last_seen", 0)) < BROADCAST_INTERVAL * 3
+            status_icon = "🟢 " if is_online or d.get("manual", False) else "🔴 "
 
             label = f"{status_icon}{d['name']} ({d['ip']})"
             if d.get("manual", False):
