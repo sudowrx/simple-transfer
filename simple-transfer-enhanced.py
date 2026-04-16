@@ -744,6 +744,7 @@ class TransferServer:
         self, sock, addr, header, filename, filesize, checksum, resume_from
     ):
         """Proceed with file transfer after confirmation"""
+        self.transfer_start_time = None  # Reset transfer timer for receiving
         try:
             save_path = os.path.join(self.save_dir, filename)
             if os.path.exists(save_path) and resume_from == 0:
@@ -1072,6 +1073,7 @@ class MainWindow:
         self.devices = []
         self.transfer_speed_label = None
         self.remaining_time_label = None
+        self.transfer_start_time = None
 
         self._setup_styles()
         self._create_widgets()
@@ -1649,15 +1651,22 @@ class MainWindow:
             and current_progress < 100
             and self.remaining_time_label
         ):
-            remaining = (100 - current_progress) / (
-                current_progress / time.time() if current_progress > 0 else 1
-            )
+            if self.transfer_start_time is None:
+                self.transfer_start_time = time.time()
+            elapsed = time.time() - self.transfer_start_time
+            if elapsed > 0:
+                speed = current_progress / elapsed  # % per second
+                remaining = (100 - current_progress) / speed if speed > 0 else 0
+            else:
+                remaining = 0
             self.root.after(
                 0,
                 lambda: self.remaining_time_label.configure(
                     text=f"{get_text('remaining')} {format_duration(remaining)}"
                 ),
             )
+        elif current_progress >= 100 and self.transfer_start_time is not None:
+            self.transfer_start_time = None
 
     def _log(self, msg):
         ts = datetime.now().strftime("%H:%M:%S")
@@ -1687,6 +1696,7 @@ class MainWindow:
 
         target_ip = self.devices[sel[0]]["ip"]
         self.progress.configure(value=0)
+        self.transfer_start_time = None  # Reset transfer timer
 
         def send_next():
             if not files:
