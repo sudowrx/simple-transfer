@@ -1096,8 +1096,8 @@ class MainWindow:
         colors = {
             "bg": "#F8FAFC",
             "card_bg": "#FFFFFF",
-            "primary": "#3B82F6",
-            "primary_dark": "#2563EB",
+            "primary": "#06B6D4",
+            "primary_dark": "#0E7490",
             "secondary": "#64748B",
             "text": "#1E293B",
             "text_light": "#64748B",
@@ -1105,12 +1105,15 @@ class MainWindow:
             "success": "#10B981",
             "warning": "#F59E0B",
             "error": "#EF4444",
+            "accent": "#22D3EE",
         }
 
         self.root.configure(bg=colors["bg"])
 
         style.configure("TFrame", background=colors["bg"])
-        style.configure("Card.TFrame", background=colors["card_bg"], relief="flat")
+        style.configure(
+            "Card.TFrame", background=colors["card_bg"], relief="flat", borderwidth=0
+        )
         style.configure(
             "TLabelFrame",
             background=colors["card_bg"],
@@ -1124,31 +1127,31 @@ class MainWindow:
             "TLabel",
             background=colors["bg"],
             foreground=colors["text"],
-            font=("Segoe UI", 9),
+            font=("Segoe UI", 10),
         )
         style.configure(
             "Header.TLabel",
             background=colors["bg"],
             foreground=colors["primary"],
-            font=("Segoe UI", 11, "bold"),
+            font=("Segoe UI", 14, "bold"),
         )
         style.configure(
             "Bold.TLabel",
             background=colors["bg"],
             foreground=colors["text"],
-            font=("Segoe UI", 10, "bold"),
+            font=("Segoe UI", 11, "bold"),
         )
         style.configure(
             "Info.TLabel",
             background=colors["bg"],
             foreground=colors["text_light"],
-            font=("Segoe UI", 8),
+            font=("Segoe UI", 9),
         )
         style.configure(
             "Card.TLabel",
             background=colors["card_bg"],
             foreground=colors["text"],
-            font=("Segoe UI", 9),
+            font=("Segoe UI", 10),
         )
 
         style.configure(
@@ -1160,7 +1163,7 @@ class MainWindow:
             borderwidth=1,
             relief="solid",
             insertcolor=colors["primary"],
-            font=("Segoe UI", 9),
+            font=("Segoe UI", 10),
         )
         style.map(
             "TEntry",
@@ -1172,16 +1175,16 @@ class MainWindow:
             "TButton",
             background=colors["card_bg"],
             foreground=colors["primary"],
-            bordercolor=colors["border"],
+            bordercolor=colors["primary"],
             borderwidth=1,
-            relief="solid",
-            font=("Segoe UI", 9),
-            padding=(10, 6),
+            relief="flat",
+            font=("Segoe UI", 10),
+            padding=(14, 10),
         )
         style.map(
             "TButton",
-            background=[("active", colors["primary"])],
-            foreground=[("active", "white")],
+            background=[("active", colors["bg"])],
+            foreground=[("active", colors["primary"])],
             bordercolor=[("active", colors["primary_dark"])],
         )
 
@@ -1193,7 +1196,7 @@ class MainWindow:
             borderwidth=0,
             relief="flat",
             font=("Segoe UI", 10, "bold"),
-            padding=(12, 8),
+            padding=(16, 10),
         )
         style.map(
             "Primary.TButton",
@@ -1203,17 +1206,17 @@ class MainWindow:
 
         style.configure(
             "Accent.TButton",
-            background=colors["success"],
+            background=colors["accent"],
             foreground="white",
-            bordercolor=colors["success"],
+            bordercolor=colors["accent"],
             borderwidth=0,
             relief="flat",
             font=("Segoe UI", 11, "bold"),
-            padding=(15, 10),
+            padding=(18, 12),
         )
         style.map(
             "Accent.TButton",
-            background=[("active", "#059669")],
+            background=[("active", colors["primary"])],
             foreground=[("active", "white")],
         )
 
@@ -1224,8 +1227,8 @@ class MainWindow:
             bordercolor=colors["error"],
             borderwidth=0,
             relief="flat",
-            font=("Segoe UI", 9),
-            padding=(10, 6),
+            font=("Segoe UI", 10),
+            padding=(14, 10),
         )
         style.map(
             "Danger.TButton",
@@ -1242,7 +1245,7 @@ class MainWindow:
             borderwidth=1,
             relief="solid",
             arrowcolor=colors["text_light"],
-            font=("Segoe UI", 9),
+            font=("Segoe UI", 10),
         )
         style.map(
             "TCombobox",
@@ -1257,7 +1260,7 @@ class MainWindow:
             background=colors["primary"],
             borderwidth=0,
             relief="flat",
-            thickness=8,
+            thickness=12,
         )
 
         style.configure("TSeparator", background=colors["border"])
@@ -1410,8 +1413,8 @@ class MainWindow:
             height=10,
             bg="white",
             fg="#1E293B",
-            font=("Segoe UI", 9),
-            selectbackground="#3B82F6",
+            font=("Segoe UI", 10),
+            selectbackground="#06B6D4",
             selectforeground="white",
             relief="flat",
             borderwidth=0,
@@ -1590,7 +1593,7 @@ class MainWindow:
         threading.Thread(
             target=self.discovery.scan_network,
             args=(None, timeout, self._update_device_list),
-            daemon=True
+            daemon=True,
         ).start()
 
     def _on_language_change(self, event):
