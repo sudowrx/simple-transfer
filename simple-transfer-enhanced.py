@@ -123,6 +123,7 @@ LANGUAGES = {
         "seconds_retry2": "秒后重试",
         "language": "语言:",
         "timeout_setting": "超时(秒):",
+        "cidr_input": "CIDR (如 172.16.0.0/16):",
         "size": "大小:",
         "elapsed": "耗时:",
         "speed": "速度:",
@@ -199,6 +200,7 @@ LANGUAGES = {
         "seconds_retry2": "seconds until retry",
         "language": "Language:",
         "timeout_setting": "Timeout(s):",
+        "cidr_input": "CIDR (e.g. 172.16.0.0/16):",
         "size": "Size:",
         "elapsed": "Elapsed:",
         "speed": "Speed:",
@@ -311,6 +313,47 @@ def calculate_network_range(ip, mask):
     broadcast_ip = ".".join(map(str, broadcast_parts))
 
     return network_ip, broadcast_ip
+
+
+def parse_cidr(cidr):
+    """解析 CIDR 格式 (例如: 192.168.1.0/24) -> (network_ip, broadcast_ip)"""
+    if "/" not in cidr:
+        return None, None
+
+    try:
+        ip_part, prefix = cidr.split("/")
+        prefix_len = int(prefix)
+
+        if not 0 <= prefix_len <= 32:
+            return None, None
+
+        ip_parts = [int(x) for x in ip_part.split(".")]
+
+        # 计算子网掩码
+        mask_int = (
+            (0xFFFFFFFF << (32 - prefix_len)) & 0xFFFFFFFF if prefix_len > 0 else 0
+        )
+        mask_parts = [
+            (mask_int >> 24) & 0xFF,
+            (mask_int >> 16) & 0xFF,
+            (mask_int >> 8) & 0xFF,
+            mask_int & 0xFF,
+        ]
+
+        # 计算网络地址和广播地址
+        network_parts = []
+        broadcast_parts = []
+
+        for i in range(4):
+            network_parts.append(ip_parts[i] & mask_parts[i])
+            broadcast_parts.append(ip_parts[i] | (~mask_parts[i] & 255))
+
+        network_ip = ".".join(map(str, network_parts))
+        broadcast_ip = ".".join(map(str, broadcast_parts))
+
+        return network_ip, broadcast_ip
+    except:
+        return None, None
 
 
 def get_hostname():
@@ -488,6 +531,18 @@ class DiscoveryService:
                     self.log_callback(
                         f"{get_text('scanning_network')} {network_start} - {network_end}"
                     )
+            elif "/" in subnet:
+                network_start, network_end = parse_cidr(subnet)
+                if network_start and network_end:
+                    if self.log_callback:
+                        self.log_callback(
+                            f"{get_text('scanning_network')} {network_start} - {network_end}"
+                        )
+                else:
+                    self.log_callback("无效的 CIDR 格式")
+                    if done_callback:
+                        done_callback()
+                    return
             else:
                 network_start, network_end = calculate_network_range(
                     f"{subnet}.1", "255.255.255.0"
@@ -499,7 +554,23 @@ class DiscoveryService:
 
             found_devices = set()
             scanned_count = 0
-            total_hosts = 254
+
+            # Calculate total hosts based on IP range
+            start_parts = [int(x) for x in network_start.split(".")]
+            end_parts = [int(x) for x in network_end.split(".")]
+
+            # Convert IPs to integers for easy calculation
+            def ip_to_int(ip):
+                parts = [int(x) for x in ip.split(".")]
+                return (parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3]
+
+            def int_to_ip(ip_int):
+                return f"{(ip_int >> 24) & 0xFF}.{(ip_int >> 16) & 0xFF}.{(ip_int >> 8) & 0xFF}.{ip_int & 0xFF}"
+
+            start_int = ip_to_int(network_start)
+            end_int = ip_to_int(network_end)
+            total_hosts = max(1, end_int - start_int + 1)
+
             lock = threading.Lock()
 
             def check_port(ip, port):
@@ -537,7 +608,7 @@ class DiscoveryService:
                         self.log_callback(
                             f"{get_text('scan_progress')} {scanned_count}/{total_hosts}"
                         )
-                    # Always log the first and last updates
+                    # Always log first and last updates
                     elif (
                         scanned_count == 1 or scanned_count == total_hosts
                     ) and self.log_callback:
@@ -545,15 +616,12 @@ class DiscoveryService:
                             f"{get_text('scan_progress')} {scanned_count}/{total_hosts}"
                         )
 
-            start_parts = [int(x) for x in network_start.split(".")]
-            end_parts = [int(x) for x in network_end.split(".")]
-
             threads = []
-            for i in range(start_parts[3], end_parts[3] + 1):
+            for ip_int in range(start_int, end_int + 1):
                 if not self.running:
                     break
 
-                target_ip = f"{start_parts[0]}.{start_parts[1]}.{start_parts[2]}.{i}"
+                target_ip = int_to_ip(ip_int)
                 thread = threading.Thread(
                     target=scan_host, args=(target_ip,), daemon=True
                 )
@@ -1094,18 +1162,18 @@ class MainWindow:
             pass
 
         colors = {
-            "bg": "#F8FAFC",
+            "bg": "#FFFFFF",
             "card_bg": "#FFFFFF",
-            "primary": "#06B6D4",
-            "primary_dark": "#0E7490",
-            "secondary": "#64748B",
-            "text": "#1E293B",
-            "text_light": "#64748B",
-            "border": "#E2E8F0",
+            "primary": "#5E6AD2",
+            "primary_dark": "#4040A0",
+            "secondary": "#6B7280",
+            "text": "#1A1A1A",
+            "text_light": "#6B7280",
+            "border": "#E5E7EB",
             "success": "#10B981",
             "warning": "#F59E0B",
             "error": "#EF4444",
-            "accent": "#22D3EE",
+            "accent": "#5E6AD2",
         }
 
         self.root.configure(bg=colors["bg"])
@@ -1118,7 +1186,6 @@ class MainWindow:
             "TLabelFrame",
             background=colors["card_bg"],
             foreground=colors["text"],
-            bordercolor=colors["border"],
             borderwidth=1,
             relief="solid",
         )
@@ -1127,48 +1194,55 @@ class MainWindow:
             "TLabel",
             background=colors["bg"],
             foreground=colors["text"],
-            font=("Segoe UI", 10),
+            font=("Ubuntu", 10),
         )
         style.configure(
             "Header.TLabel",
             background=colors["bg"],
             foreground=colors["primary"],
-            font=("Segoe UI", 14, "bold"),
+            font=("Ubuntu", 14, "bold"),
         )
         style.configure(
             "Bold.TLabel",
             background=colors["bg"],
             foreground=colors["text"],
-            font=("Segoe UI", 11, "bold"),
+            font=("Ubuntu", 11, "bold"),
         )
         style.configure(
             "Info.TLabel",
             background=colors["bg"],
             foreground=colors["text_light"],
-            font=("Segoe UI", 9),
+            font=("Ubuntu", 9),
         )
         style.configure(
             "Card.TLabel",
             background=colors["card_bg"],
             foreground=colors["text"],
-            font=("Segoe UI", 10),
+            font=("Ubuntu", 10),
+        )
+        style.configure(
+            "Emoji.TLabel",
+            background=colors["bg"],
+            foreground=colors["text"],
+            font=("Noto Color Emoji", 14),
         )
 
         style.configure(
             "TEntry",
-            fieldbackground="white",
-            background="white",
+            fieldbackground=colors["card_bg"],
+            background=colors["card_bg"],
             foreground=colors["text"],
             bordercolor=colors["border"],
             borderwidth=1,
             relief="solid",
             insertcolor=colors["primary"],
-            font=("Segoe UI", 10),
+            font=("Ubuntu", 10),
         )
         style.map(
             "TEntry",
             foreground=[("focus", colors["text"])],
             bordercolor=[("focus", colors["primary"])],
+            fieldbackground=[("focus", colors["card_bg"])],
         )
 
         style.configure(
@@ -1177,15 +1251,15 @@ class MainWindow:
             foreground=colors["primary"],
             bordercolor=colors["primary"],
             borderwidth=1,
-            relief="flat",
-            font=("Segoe UI", 10),
-            padding=(14, 10),
+            relief="solid",
+            font=("Ubuntu", 10),
+            padding=(12, 8),
         )
         style.map(
             "TButton",
-            background=[("active", colors["bg"])],
-            foreground=[("active", colors["primary"])],
-            bordercolor=[("active", colors["primary_dark"])],
+            background=[("active", colors["primary"])],
+            foreground=[("active", "white")],
+            bordercolor=[("active", colors["primary"])],
         )
 
         style.configure(
@@ -1195,8 +1269,8 @@ class MainWindow:
             bordercolor=colors["primary"],
             borderwidth=0,
             relief="flat",
-            font=("Segoe UI", 10, "bold"),
-            padding=(16, 10),
+            font=("Ubuntu", 10, "normal"),
+            padding=(14, 8),
         )
         style.map(
             "Primary.TButton",
@@ -1206,57 +1280,58 @@ class MainWindow:
 
         style.configure(
             "Accent.TButton",
-            background=colors["accent"],
+            background=colors["primary"],
             foreground="white",
-            bordercolor=colors["accent"],
+            bordercolor=colors["primary"],
             borderwidth=0,
             relief="flat",
-            font=("Segoe UI", 11, "bold"),
-            padding=(18, 12),
+            font=("Ubuntu", 10, "normal"),
+            padding=(14, 8),
         )
         style.map(
             "Accent.TButton",
-            background=[("active", colors["primary"])],
+            background=[("active", colors["primary_dark"])],
             foreground=[("active", "white")],
         )
 
         style.configure(
             "Danger.TButton",
-            background=colors["error"],
-            foreground="white",
+            background=colors["card_bg"],
+            foreground=colors["error"],
             bordercolor=colors["error"],
-            borderwidth=0,
-            relief="flat",
-            font=("Segoe UI", 10),
-            padding=(14, 10),
+            borderwidth=1,
+            relief="solid",
+            font=("Ubuntu", 10),
+            padding=(12, 8),
         )
         style.map(
             "Danger.TButton",
-            background=[("active", "#DC2626")],
+            background=[("active", colors["error"])],
             foreground=[("active", "white")],
+            bordercolor=[("active", colors["error"])],
         )
 
         style.configure(
             "TCombobox",
-            fieldbackground="white",
-            background="white",
+            fieldbackground=colors["card_bg"],
+            background=colors["card_bg"],
             foreground=colors["text"],
             bordercolor=colors["border"],
             borderwidth=1,
             relief="solid",
             arrowcolor=colors["text_light"],
-            font=("Segoe UI", 10),
+            font=("Ubuntu", 10),
         )
         style.map(
             "TCombobox",
             foreground=[("focus", colors["text"])],
             bordercolor=[("focus", colors["primary"])],
-            fieldbackground=[("readonly", "white")],
+            fieldbackground=[("readonly", colors["card_bg"])],
         )
 
         style.configure(
             "Horizontal.TProgressbar",
-            troughcolor=colors["border"],
+            troughcolor=colors["card_bg"],
             background=colors["primary"],
             borderwidth=0,
             relief="flat",
@@ -1268,18 +1343,15 @@ class MainWindow:
         self.colors = colors
 
     def _create_widgets(self):
-        main_container = ttk.Frame(self.root, padding=16)
+        main_container = ttk.Frame(self.root, padding=24)
         main_container.pack(fill=tk.BOTH, expand=True)
 
         header_frame = ttk.Frame(main_container)
         header_frame.pack(fill=tk.X, pady=(0, 16))
 
-        info_container = ttk.Frame(header_frame, style="Card.TFrame", padding=12)
+        info_container = ttk.Frame(header_frame, padding=16)
         info_container.pack(fill=tk.X)
 
-        ttk.Label(info_container, text="📱", font=("Segoe UI", 14)).pack(
-            side=tk.LEFT, padx=(0, 8)
-        )
         ttk.Label(
             info_container, text=get_text("local_name"), style="Info.TLabel"
         ).pack(side=tk.LEFT)
@@ -1288,9 +1360,6 @@ class MainWindow:
         )
         self.name_label.pack(side=tk.LEFT, padx=(8, 16))
 
-        ttk.Label(info_container, text="🌐", font=("Segoe UI", 14)).pack(
-            side=tk.LEFT, padx=(0, 8)
-        )
         ttk.Label(info_container, text=get_text("ip_label"), style="Info.TLabel").pack(
             side=tk.LEFT
         )
@@ -1299,9 +1368,6 @@ class MainWindow:
         )
         self.ip_label.pack(side=tk.LEFT, padx=(8, 16))
 
-        ttk.Label(info_container, text="🌍", font=("Segoe UI", 14)).pack(
-            side=tk.LEFT, padx=(0, 8)
-        )
         ttk.Label(info_container, text=get_text("language"), style="Info.TLabel").pack(
             side=tk.LEFT
         )
@@ -1316,12 +1382,9 @@ class MainWindow:
         self.lang_combo.pack(side=tk.LEFT, padx=8)
         self.lang_combo.bind("<<ComboboxSelected>>", self._on_language_change)
 
-        dir_container = ttk.Frame(main_container, style="Card.TFrame", padding=12)
+        dir_container = ttk.Frame(main_container, padding=16)
         dir_container.pack(fill=tk.X, pady=(0, 16))
 
-        ttk.Label(dir_container, text="📁", font=("Segoe UI", 14)).pack(
-            side=tk.LEFT, padx=(0, 8)
-        )
         ttk.Label(dir_container, text=get_text("save_dir"), style="TLabel").pack(
             side=tk.LEFT
         )
@@ -1335,22 +1398,25 @@ class MainWindow:
             style="Primary.TButton",
         ).pack(side=tk.LEFT, padx=(8, 0))
 
-        ttk.Separator(main_container, orient="horizontal").pack(fill=tk.X, pady=8)
+        ttk.Separator(main_container, orient="horizontal").pack(fill=tk.X, pady=16)
 
         mid_container = ttk.Frame(main_container)
         mid_container.pack(fill=tk.BOTH, expand=True, pady=8)
         mid_frame = ttk.PanedWindow(mid_container, orient=tk.HORIZONTAL)
         mid_frame.pack(fill=tk.BOTH, expand=True)
 
-        left_frame = ttk.Frame(mid_frame, padding=12)
+        left_frame = ttk.Frame(mid_frame, padding=16)
         mid_frame.add(left_frame, weight=1)
 
-        left_card = ttk.Frame(left_frame, style="Card.TFrame", padding=16)
+        left_card = ttk.Frame(left_frame, padding=16)
         left_card.pack(fill=tk.BOTH, expand=True)
 
-        ttk.Label(left_card, text="📡", font=("Segoe UI", 12)).pack(
-            anchor=tk.W, pady=(0, 4)
-        )
+        ttk.Label(
+            left_card,
+            text="设备",
+            font=("Ubuntu", 11, "bold"),
+            foreground=self.colors["primary"],
+        ).pack(anchor=tk.W, pady=(0, 4))
         ttk.Label(
             left_card, text=get_text("online_devices"), style="Header.TLabel"
         ).pack(anchor=tk.W, pady=(0, 12))
@@ -1382,56 +1448,68 @@ class MainWindow:
 
         ttk.Button(
             btn_row,
-            text="➕ " + get_text("add"),
+            text=get_text("add"),
             command=self._add_manual_device,
             style="Primary.TButton",
         ).pack(side=tk.LEFT, padx=(0, 8))
         ttk.Button(
             btn_row,
-            text="➖ " + get_text("remove_selected"),
+            text=get_text("remove_selected"),
             command=self._remove_selected_device,
         ).pack(side=tk.LEFT, padx=(0, 8))
 
-        scan_row = ttk.Frame(add_device_frame)
-        scan_row.pack(fill=tk.X)
+        scan_row1 = ttk.Frame(add_device_frame)
+        scan_row1.pack(fill=tk.X)
 
-        ttk.Label(scan_row, text=get_text("timeout_setting"), style="TLabel").pack(
+        ttk.Label(scan_row1, text=get_text("cidr_input"), style="TLabel").pack(
             side=tk.LEFT
         )
-        self.timeout_entry = ttk.Entry(scan_row, width=5)
+        self.cidr_entry = ttk.Entry(scan_row1, width=22)
+        self.cidr_entry.insert(0, "172.16.0.0/16")
+        self.cidr_entry.pack(side=tk.LEFT, padx=8, fill=tk.X, expand=True)
+
+        ttk.Label(scan_row1, text=get_text("timeout_setting"), style="TLabel").pack(
+            side=tk.LEFT, padx=(8, 0)
+        )
+        self.timeout_entry = ttk.Entry(scan_row1, width=4)
         self.timeout_entry.insert(0, "1")
-        self.timeout_entry.pack(side=tk.LEFT, padx=8)
+        self.timeout_entry.pack(side=tk.LEFT, padx=4)
+
+        scan_row2 = ttk.Frame(add_device_frame)
+        scan_row2.pack(fill=tk.X, pady=(4, 0))
         ttk.Button(
-            scan_row,
-            text="🔍 " + get_text("scan_network"),
+            scan_row2,
+            text=get_text("scan_network"),
             command=self._scan_network,
             style="Primary.TButton",
-        ).pack(side=tk.LEFT, padx=(8, 0))
+        ).pack(side=tk.LEFT)
 
         self.device_listbox = tk.Listbox(
             left_card,
             height=10,
-            bg="white",
-            fg="#1E293B",
-            font=("Segoe UI", 10),
-            selectbackground="#06B6D4",
+            bg=self.colors["card_bg"],
+            fg=self.colors["text"],
+            font=("Ubuntu", 10),
+            selectbackground=self.colors["primary"],
             selectforeground="white",
             relief="flat",
             borderwidth=0,
-            highlightthickness=1,
-            highlightbackground="#E2E8F0",
+            highlightthickness=0,
         )
         self.device_listbox.pack(fill=tk.BOTH, expand=True)
 
-        right_frame = ttk.Frame(mid_frame, padding=12)
+        right_frame = ttk.Frame(mid_frame, padding=16)
         mid_frame.add(right_frame, weight=1)
 
-        right_card = ttk.Frame(right_frame, style="Card.TFrame", padding=16)
+        right_card = ttk.Frame(right_frame, padding=16)
         right_card.pack(fill=tk.BOTH, expand=True)
 
-        ttk.Label(right_card, text="📎", font=("Segoe UI", 12)).pack(
-            anchor=tk.W, pady=(0, 4)
-        )
+        ttk.Label(
+            right_card,
+            text="文件",
+            font=("Ubuntu", 11, "bold"),
+            foreground=self.colors["primary"],
+        ).pack(anchor=tk.W, pady=(0, 4))
         ttk.Label(right_card, text=get_text("select_file"), style="Header.TLabel").pack(
             anchor=tk.W, pady=(0, 8)
         )
@@ -1457,25 +1535,25 @@ class MainWindow:
 
         ttk.Button(
             right_card,
-            text="📤 " + get_text("send"),
+            text=get_text("send"),
             command=self._send_file,
             style="Accent.TButton",
         ).pack(fill=tk.X, pady=(0, 8))
         ttk.Button(
             right_card,
-            text="❌ " + get_text("cancel"),
+            text=get_text("cancel"),
             command=self._cancel_transfer,
             style="Danger.TButton",
         ).pack(fill=tk.X, pady=(0, 8))
         ttk.Button(
             right_card,
-            text="📜 " + get_text("view_history"),
+            text=get_text("view_history"),
             command=self._view_history,
             style="Primary.TButton",
         ).pack(fill=tk.X)
 
-        progress_container = ttk.Frame(main_container, style="Card.TFrame", padding=12)
-        progress_container.pack(fill=tk.X, pady=(8, 0))
+        progress_container = ttk.Frame(main_container, padding=16)
+        progress_container.pack(fill=tk.X, pady=(16, 0))
 
         ttk.Label(progress_container, text=get_text("progress"), style="TLabel").pack(
             side=tk.LEFT
@@ -1489,31 +1567,38 @@ class MainWindow:
         speed_container.pack(fill=tk.X)
 
         self.transfer_speed_label = ttk.Label(
-            speed_container, text=f"⚡ {get_text('speed')} --", style="Bold.TLabel"
+            speed_container,
+            text=f"{get_text('speed')} --",
+            style="Bold.TLabel",
+            font=("Ubuntu", 10, "normal"),
         )
         self.transfer_speed_label.pack(side=tk.LEFT, padx=(12, 0))
         self.remaining_time_label = ttk.Label(
-            speed_container, text=f"⏱️  {get_text('remaining')} --", style="Bold.TLabel"
+            speed_container,
+            text=f"{get_text('remaining')} --",
+            style="Bold.TLabel",
+            font=("Ubuntu", 10, "normal"),
         )
         self.remaining_time_label.pack(side=tk.LEFT, padx=(24, 0))
 
-        log_container = ttk.Frame(main_container, padding=(12, 12, 12, 0))
+        log_container = ttk.Frame(main_container, padding=(16, 16, 16, 0))
         log_container.pack(fill=tk.BOTH, expand=True)
 
         ttk.Label(
-            log_container, text="📝 " + get_text("log"), style="Header.TLabel"
+            log_container,
+            text=get_text("log"),
+            style="Header.TLabel",
         ).pack(anchor=tk.W, pady=(0, 8))
         self.log_text = scrolledtext.ScrolledText(
             log_container,
             height=6,
             state="disabled",
-            font=("Segoe UI", 9),
-            bg="white",
-            fg="#1E293B",
+            font=("Ubuntu", 9),
+            bg=self.colors["card_bg"],
+            fg=self.colors["text"],
             relief="flat",
-            borderwidth=1,
-            highlightthickness=1,
-            highlightbackground="#E2E8F0",
+            borderwidth=0,
+            highlightthickness=0,
         )
         self.log_text.pack(fill=tk.BOTH, expand=True)
 
@@ -1585,6 +1670,7 @@ class MainWindow:
 
     def _scan_network(self):
         """扫描网络"""
+        cidr_input = self.cidr_entry.get().strip()
         try:
             timeout = float(self.timeout_entry.get())
         except:
@@ -1592,7 +1678,7 @@ class MainWindow:
 
         threading.Thread(
             target=self.discovery.scan_network,
-            args=(None, timeout, self._update_device_list),
+            args=(cidr_input, timeout, self._update_device_list),
             daemon=True,
         ).start()
 
@@ -1633,9 +1719,9 @@ class MainWindow:
             # Green for: manual devices OR devices with recent last_seen (scanned)
             is_online = (time.time() - d.get("last_seen", 0)) < BROADCAST_INTERVAL * 3
             is_manual = d.get("manual", False)
-            status_icon = "🟢 " if is_online or is_manual else "🔴 "
+            status_icon = "[O]" if is_online or is_manual else "[x]"
 
-            label = f"{status_icon}{d['name']} ({d['ip']})"
+            label = f"{d['name']} ({d['ip']})"
             if is_manual:
                 label += f" [{get_text('manual_device')}]"
             self.device_listbox.insert(tk.END, label)
@@ -1746,13 +1832,12 @@ class MainWindow:
         text = scrolledtext.ScrolledText(
             container,
             state="disabled",
-            font=("Segoe UI", 9),
-            bg="white",
-            fg="#1E293B",
+            font=("Ubuntu", 9),
+            bg=self.colors["card_bg"],
+            fg=self.colors["text"],
             relief="flat",
-            borderwidth=1,
-            highlightthickness=1,
-            highlightbackground="#E2E8F0",
+            borderwidth=0,
+            highlightthickness=0,
         )
         text.pack(fill=tk.BOTH, expand=True)
 
