@@ -5,6 +5,9 @@ on:
     branches: [master]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     strategy:
@@ -75,10 +78,17 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: v1.3.1
+          name: "Simple Transfer Enhanced v1.3.1"
           files: |
             artifacts/SimpleTransferEnhanced-linux/SimpleTransferEnhanced
             artifacts/SimpleTransferEnhanced-windows/SimpleTransferEnhanced.exe
-            artifacts/SimpleTransferEnhanced-macos.zip
-          draft: true
+            artifacts/SimpleTransferEnhanced-macos/SimpleTransferEnhanced.app
+          body: |
+            ## Downloads
+            - **Linux**: `chmod +x SimpleTransferEnhanced && ./SimpleTransferEnhanced`
+            - **Windows**: Run `SimpleTransferEnhanced.exe`
+            - **macOS**: Open `SimpleTransferEnhanced.app`
+          draft: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
