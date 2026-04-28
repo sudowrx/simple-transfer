@@ -44,8 +44,10 @@ RETRY_DELAY = 2  # 秒
 HISTORY_FILE = os.path.expanduser("~/.simple_transfer_history.json")
 MAX_HISTORY = 50
 IP_HISTORY_FILE = os.path.expanduser("~/.simple_transfer_ip_history.json")
+DEVICE_HISTORY_FILE = os.path.expanduser("~/.simple_transfer_device_history.json")
 CONFIG_FILE = os.path.expanduser("~/.simple_transfer_config.json")
 MAX_IP_HISTORY = 20
+MAX_DEVICE_HISTORY = 50
 
 # ==================== 多语言支持 ====================
 
@@ -461,6 +463,49 @@ def add_to_ip_history(ip):
     save_ip_history(history)
 
 
+# ==================== 设备历史记录功能 ====================
+
+
+def load_device_history():
+    """加载设备历史记录"""
+    try:
+        if os.path.exists(DEVICE_HISTORY_FILE):
+            with open(DEVICE_HISTORY_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except:
+        pass
+    return []
+
+
+def save_device_history(history):
+    """保存设备历史记录"""
+    try:
+        with open(DEVICE_HISTORY_FILE, "w", encoding="utf-8") as f:
+            json.dump(history, f, indent=2, ensure_ascii=False)
+    except:
+        pass
+
+
+def add_to_device_history(device):
+    """添加设备到历史记录"""
+    if not device.get("ip") or not is_valid_ip(device["ip"]):
+        return
+
+    history = load_device_history()
+
+    # Remove existing entry with same IP
+    history = [d for d in history if d.get("ip") != device["ip"]]
+
+    # Add new device to front
+    history.insert(0, device)
+
+    # Limit history size
+    if len(history) > MAX_DEVICE_HISTORY:
+        history = history[:MAX_DEVICE_HISTORY]
+
+    save_device_history(history)
+
+
 # ==================== 传输历史记录功能 ====================
 
 
@@ -853,7 +898,11 @@ class TransferServer:
                     now = time.time()
                     if now - last_update > 0.1 or received == filesize:
                         progress = (received / filesize) * 100
-                        self.progress_callback(progress)
+                        # Ensure progress callback runs in main thread
+                        if hasattr(self, "root_ref") and self.root_ref:
+                            self.root_ref.after(0, lambda p=progress: self.progress_callback(p))
+                        else:
+                            self.progress_callback(progress)
                         last_update = now
 
                     if now - last_speed_time > 0.5:
@@ -874,7 +923,11 @@ class TransferServer:
                     self.log_callback(get_text("checksum_ok"))
 
             self.log_callback(f"{get_text('saving_to')} {save_path}")
-            self.progress_callback(100)
+            # Ensure final progress update runs in main thread
+            if hasattr(self, "root_ref") and self.root_ref:
+                self.root_ref.after(0, lambda: self.progress_callback(100))
+            else:
+                self.progress_callback(100)
 
             elapsed = time.time() - start_time
             avg_speed = filesize / elapsed if elapsed > 0 else 0
@@ -1046,7 +1099,7 @@ class TransferClient:
                         self.progress_callback(progress)
                         last_update = now
 
-                    if now - last_speed_time > 0.5:
+                    if now - last_speed_time > 0.1:
                         bytes_since = sent - last_speed_bytes
                         time_since = now - last_speed_time
                         if time_since > 0:
@@ -1129,8 +1182,12 @@ class MainWindow:
     def __init__(self, root):
         self.root = root
         self.root.title(get_text("window_title"))
-        self.root.geometry("900x750")
-        self.root.minsize(800, 650)
+        self.root.geometry("700x500")
+        self.root.minsize(600, 400)
+        try:
+            self.root.wm_attributes("-alpha", 0.95)
+        except:
+            pass
 
         load_config()
 
@@ -1148,6 +1205,12 @@ class MainWindow:
         self._setup_styles()
         self._create_widgets()
         self._start_services()
+        
+        # Progress tracking variables
+        self.current_progress = 0
+        self.transfer_filesize = 0
+        self._current_speed = "--"
+        self._current_remaining = "--"
 
     def _setup_styles(self):
         style = ttk.Style()
@@ -1331,294 +1394,167 @@ class MainWindow:
 
         style.configure(
             "Horizontal.TProgressbar",
-            troughcolor=colors["card_bg"],
-            background=colors["primary"],
-            borderwidth=0,
-            relief="flat",
-            thickness=12,
+            troughcolor="#EEEEEE",  # Light gray background for better contrast
+            background="#FF4444",   # Bright red for high visibility
+            borderwidth=1,
+            relief="solid",
+            thickness=16,
         )
+
+        # Debug: verify style configuration
+        print(f"DEBUG: Progressbar style configured - troughcolor: #EEEEEE, background: #FF4444")
 
         style.configure("TSeparator", background=colors["border"])
 
         self.colors = colors
 
     def _create_widgets(self):
-        main_container = ttk.Frame(self.root, padding=24)
-        main_container.pack(fill=tk.BOTH, expand=True)
-
-        header_frame = ttk.Frame(main_container)
-        header_frame.pack(fill=tk.X, pady=(0, 16))
-
-        info_container = ttk.Frame(header_frame, padding=16)
-        info_container.pack(fill=tk.X)
-
-        ttk.Label(
-            info_container, text=get_text("local_name"), style="Info.TLabel"
-        ).pack(side=tk.LEFT)
-        self.name_label = ttk.Label(
-            info_container, text=self.my_name, style="Bold.TLabel"
-        )
-        self.name_label.pack(side=tk.LEFT, padx=(8, 16))
-
-        ttk.Label(info_container, text=get_text("ip_label"), style="Info.TLabel").pack(
-            side=tk.LEFT
-        )
-        self.ip_label = ttk.Label(
-            info_container, text=get_local_ip(), style="Bold.TLabel"
-        )
-        self.ip_label.pack(side=tk.LEFT, padx=(8, 16))
-
-        ttk.Label(info_container, text=get_text("language"), style="Info.TLabel").pack(
-            side=tk.LEFT
-        )
+        self.root.configure(bg="#f0f0f0")
+        
+        main_frame = tk.Frame(self.root, bg="#f0f0f0", padx=15, pady=15)
+        main_frame.pack(fill=tk.BOTH, expand=True)
+        
+        header_frame = tk.Frame(main_frame, bg="#f0f0f0")
+        header_frame.pack(fill=tk.X, pady=15)
+        
+        info_frame = tk.Frame(header_frame, bg="#f0f0f0")
+        info_frame.pack(side=tk.LEFT)
+        tk.Label(info_frame, text=f"本机: {self.my_name} ({get_local_ip()})", 
+                font=("Arial", 10, "bold"), bg="#f0f0f0").pack(anchor=tk.W)
+        
+        lang_frame = tk.Frame(header_frame, bg="#f0f0f0")
+        lang_frame.pack(side=tk.RIGHT)
+        tk.Label(lang_frame, text="语言:", bg="#f0f0f0").pack(side=tk.LEFT)
         self.lang_var = tk.StringVar(value=current_lang)
-        self.lang_combo = ttk.Combobox(
-            info_container,
-            textvariable=self.lang_var,
-            values=["zh", "en"],
-            width=5,
-            state="readonly",
-        )
-        self.lang_combo.pack(side=tk.LEFT, padx=8)
-        self.lang_combo.bind("<<ComboboxSelected>>", self._on_language_change)
-
-        dir_container = ttk.Frame(main_container, padding=16)
-        dir_container.pack(fill=tk.X, pady=(0, 16))
-
-        ttk.Label(dir_container, text=get_text("save_dir"), style="TLabel").pack(
-            side=tk.LEFT
-        )
-        self.dir_entry = ttk.Entry(dir_container)
+        lang_combo = tk.OptionMenu(lang_frame, self.lang_var, "zh", "en", 
+                                 command=self._on_language_change)
+        lang_combo.pack(side=tk.LEFT)
+        
+        dir_frame = tk.Frame(main_frame, bg="#f0f0f0")
+        dir_frame.pack(fill=tk.X, pady=12)
+        tk.Label(dir_frame, text="保存目录:", font=("Arial", 10, "bold"), 
+                bg="#f0f0f0").pack(side=tk.LEFT)
+        self.dir_entry = tk.Entry(dir_frame, width=50)
         self.dir_entry.insert(0, self.save_dir)
-        self.dir_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=8)
-        ttk.Button(
-            dir_container,
-            text=get_text("browse"),
-            command=self._browse_dir,
-            style="Primary.TButton",
-        ).pack(side=tk.LEFT, padx=(8, 0))
-
-        ttk.Separator(main_container, orient="horizontal").pack(fill=tk.X, pady=16)
-
-        mid_container = ttk.Frame(main_container)
-        mid_container.pack(fill=tk.BOTH, expand=True, pady=8)
-        mid_frame = ttk.PanedWindow(mid_container, orient=tk.HORIZONTAL)
-        mid_frame.pack(fill=tk.BOTH, expand=True)
-
-        left_frame = ttk.Frame(mid_frame, padding=16)
-        mid_frame.add(left_frame, weight=1)
-
-        left_card = ttk.Frame(left_frame, padding=16)
-        left_card.pack(fill=tk.BOTH, expand=True)
-
-        ttk.Label(
-            left_card,
-            text="设备",
-            font=("Ubuntu", 11, "bold"),
-            foreground=self.colors["primary"],
-        ).pack(anchor=tk.W, pady=(0, 4))
-        ttk.Label(
-            left_card, text=get_text("online_devices"), style="Header.TLabel"
-        ).pack(anchor=tk.W, pady=(0, 12))
-
-        add_device_frame = ttk.Frame(left_card, padding=10)
-        add_device_frame.pack(fill=tk.X, pady=(0, 12))
-
-        ttk.Label(
-            add_device_frame, text=get_text("manual_add"), style="Bold.TLabel"
-        ).pack(anchor=tk.W, pady=(0, 8))
-
-        input_row = ttk.Frame(add_device_frame)
-        input_row.pack(fill=tk.X, pady=(0, 8))
-
-        ttk.Label(input_row, text=get_text("ip"), style="TLabel").pack(side=tk.LEFT)
+        self.dir_entry.pack(side=tk.LEFT, padx=10, fill=tk.X, expand=True)
+        tk.Button(dir_frame, text="浏览", command=self._browse_dir, 
+                 bg="#007bff", fg="white", font=("Arial", 9)).pack(side=tk.RIGHT)
+        
+        content_frame = tk.Frame(main_frame, bg="#f0f0f0")
+        content_frame.pack(fill=tk.BOTH, expand=True)
+        
+        left_frame = tk.Frame(content_frame, bg="#ffffff", relief=tk.RAISED, bd=1)
+        left_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 5))
+        
+        tk.Label(left_frame, text="在线设备", font=("Arial", 12, "bold"), 
+                bg="#ffffff", pady=10).pack(anchor=tk.W, padx=10)
+        
+        manual_frame = tk.Frame(left_frame, bg="#ffffff", padx=10, pady=10)
+        manual_frame.pack(fill=tk.X)
+        
+        tk.Label(manual_frame, text="手动添加:", font=("Arial", 9, "bold"), 
+                bg="#ffffff").pack(anchor=tk.W)
+        
+        ip_frame = tk.Frame(manual_frame, bg="#ffffff")
+        ip_frame.pack(fill=tk.X, pady=5)
+        tk.Label(ip_frame, text="IP:", bg="#ffffff").pack(side=tk.LEFT)
         ip_history = load_ip_history()
-        self.manual_ip_entry = ttk.Combobox(input_row, values=ip_history, width=15)
+        self.manual_ip_entry = tk.Entry(ip_frame, width=15)
         if ip_history:
-            self.manual_ip_entry.set(ip_history[0])
-        self.manual_ip_entry.pack(side=tk.LEFT, padx=(8, 12))
-        self.manual_ip_entry.bind("<Return>", lambda e: self._add_manual_device())
-
-        ttk.Label(input_row, text=get_text("name"), style="TLabel").pack(side=tk.LEFT)
-        self.manual_name_entry = ttk.Entry(input_row, width=15)
-        self.manual_name_entry.pack(side=tk.LEFT, padx=8)
-
-        btn_row = ttk.Frame(add_device_frame)
-        btn_row.pack(fill=tk.X, pady=(0, 8))
-
-        ttk.Button(
-            btn_row,
-            text=get_text("add"),
-            command=self._add_manual_device,
-            style="Primary.TButton",
-        ).pack(side=tk.LEFT, padx=(0, 8))
-        ttk.Button(
-            btn_row,
-            text=get_text("remove_selected"),
-            command=self._remove_selected_device,
-        ).pack(side=tk.LEFT, padx=(0, 8))
-
-        scan_row1 = ttk.Frame(add_device_frame)
-        scan_row1.pack(fill=tk.X)
-
-        ttk.Label(scan_row1, text=get_text("cidr_input"), style="TLabel").pack(
-            side=tk.LEFT
+            self.manual_ip_entry.insert(0, ip_history[0])
+        self.manual_ip_entry.pack(side=tk.LEFT, padx=5)
+        
+        name_frame = tk.Frame(manual_frame, bg="#ffffff")  
+        name_frame.pack(fill=tk.X, pady=5)
+        tk.Label(name_frame, text="名称:", bg="#ffffff").pack(side=tk.LEFT)
+        self.manual_name_entry = tk.Entry(name_frame, width=15)
+        self.manual_name_entry.pack(side=tk.LEFT, padx=5)
+        
+        btn_frame = tk.Frame(manual_frame, bg="#ffffff")
+        btn_frame.pack(fill=tk.X, pady=5)
+        tk.Button(btn_frame, text="添加", command=self._add_manual_device,
+                 bg="#28a745", fg="white", font=("Arial", 9)).pack(side=tk.LEFT, padx=5)
+        tk.Button(btn_frame, text="移除选中", command=self._remove_selected_device,
+                 bg="#dc3545", fg="white", font=("Arial", 9)).pack(side=tk.LEFT, padx=5)
+        
+        list_frame = tk.Frame(left_frame, bg="#ffffff", padx=10, pady=10)
+        list_frame.pack(fill=tk.BOTH, expand=True)
+        self.device_listbox = tk.Listbox(list_frame, height=6, font=("Arial", 10))
+        scrollbar = tk.Scrollbar(list_frame, orient=tk.VERTICAL, command=self.device_listbox.yview)
+        self.device_listbox.configure(yscrollcommand=scrollbar.set)
+        self.device_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        right_frame = tk.Frame(content_frame, bg="#ffffff", relief=tk.RAISED, bd=1)  
+        right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=(5, 0))
+        
+        tk.Label(right_frame, text="文件传输", font=("Arial", 12, "bold"), 
+                bg="#ffffff", pady=10).pack(anchor=tk.W, padx=10)
+        
+        file_frame = tk.Frame(right_frame, bg="#ffffff", padx=10, pady=10)
+        file_frame.pack(fill=tk.X)
+        
+        tk.Label(file_frame, text="选择文件:", font=("Arial", 9, "bold"), 
+                bg="#ffffff").pack(anchor=tk.W)
+        self.file_entry = tk.Entry(file_frame, width=40, font=("Arial", 10))
+        self.file_entry.pack(fill=tk.X, pady=5)
+        
+        file_btn_frame = tk.Frame(file_frame, bg="#ffffff")
+        file_btn_frame.pack(fill=tk.X, pady=5)
+        tk.Button(file_btn_frame, text="浏览文件", command=self._browse_file,
+                 bg="#007bff", fg="white", font=("Arial", 9)).pack(side=tk.LEFT, padx=5)
+        tk.Button(file_btn_frame, text="选择多个", command=self._browse_files,
+                 bg="#007bff", fg="white", font=("Arial", 9)).pack(side=tk.LEFT, padx=5)
+        
+        action_frame = tk.Frame(right_frame, bg="#ffffff", padx=10, pady=10)
+        action_frame.pack(fill=tk.X)
+        tk.Button(action_frame, text="发送 →", command=self._send_file,
+                 bg="#28a745", fg="white", font=("Arial", 10, "bold"), 
+                 height=2, width=15).pack(pady=5)
+        tk.Button(action_frame, text="取消", command=self._cancel_transfer,
+                 bg="#dc3545", fg="white", font=("Arial", 10), 
+                 height=1, width=15).pack(pady=5)
+        tk.Button(action_frame, text="查看历史", command=self._view_history,
+                 bg="#6c757d", fg="white", font=("Arial", 10), 
+                 height=1, width=15).pack(pady=5)
+        
+        status_frame = tk.Frame(main_frame, bg="#f0f0f0")
+        status_frame.pack(fill=tk.X, pady=10)
+        
+        self.status_label = tk.Label(
+            status_frame, 
+            text="进度: 0% | 速度: -- | 剩余: --",
+            font=("Arial", 10, "bold"),
+            bg="#f0f0f0",
+            fg="red"
         )
-        self.cidr_entry = ttk.Entry(scan_row1, width=22)
-        self.cidr_entry.insert(0, "172.16.0.0/16")
-        self.cidr_entry.pack(side=tk.LEFT, padx=8, fill=tk.X, expand=True)
-
-        ttk.Label(scan_row1, text=get_text("timeout_setting"), style="TLabel").pack(
-            side=tk.LEFT, padx=(8, 0)
-        )
-        self.timeout_entry = ttk.Entry(scan_row1, width=4)
-        self.timeout_entry.insert(0, "1")
-        self.timeout_entry.pack(side=tk.LEFT, padx=4)
-
-        scan_row2 = ttk.Frame(add_device_frame)
-        scan_row2.pack(fill=tk.X, pady=(4, 0))
-        ttk.Button(
-            scan_row2,
-            text=get_text("scan_network"),
-            command=self._scan_network,
-            style="Primary.TButton",
-        ).pack(side=tk.LEFT)
-
-        self.device_listbox = tk.Listbox(
-            left_card,
-            height=10,
-            bg=self.colors["card_bg"],
-            fg=self.colors["text"],
-            font=("Ubuntu", 10),
-            selectbackground=self.colors["primary"],
-            selectforeground="white",
-            relief="flat",
-            borderwidth=0,
-            highlightthickness=0,
-        )
-        self.device_listbox.pack(fill=tk.BOTH, expand=True)
-
-        right_frame = ttk.Frame(mid_frame, padding=16)
-        mid_frame.add(right_frame, weight=1)
-
-        right_card = ttk.Frame(right_frame, padding=16)
-        right_card.pack(fill=tk.BOTH, expand=True)
-
-        ttk.Label(
-            right_card,
-            text="文件",
-            font=("Ubuntu", 11, "bold"),
-            foreground=self.colors["primary"],
-        ).pack(anchor=tk.W, pady=(0, 4))
-        ttk.Label(right_card, text=get_text("select_file"), style="Header.TLabel").pack(
-            anchor=tk.W, pady=(0, 8)
-        )
-        self.file_entry = ttk.Entry(right_card)
-        self.file_entry.pack(fill=tk.X, pady=(0, 8))
-
-        file_btn_frame = ttk.Frame(right_card)
-        file_btn_frame.pack(fill=tk.X, pady=(0, 12))
-        ttk.Button(
-            file_btn_frame,
-            text=get_text("browse"),
-            command=self._browse_file,
-            style="Primary.TButton",
-        ).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
-        ttk.Button(
-            file_btn_frame,
-            text=get_text("select_files"),
-            command=self._browse_files,
-            style="Primary.TButton",
-        ).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(4, 0))
-
-        ttk.Separator(right_card, orient="horizontal").pack(fill=tk.X, pady=12)
-
-        ttk.Button(
-            right_card,
-            text=get_text("send"),
-            command=self._send_file,
-            style="Accent.TButton",
-        ).pack(fill=tk.X, pady=(0, 8))
-        ttk.Button(
-            right_card,
-            text=get_text("cancel"),
-            command=self._cancel_transfer,
-            style="Danger.TButton",
-        ).pack(fill=tk.X, pady=(0, 8))
-        ttk.Button(
-            right_card,
-            text=get_text("view_history"),
-            command=self._view_history,
-            style="Primary.TButton",
-        ).pack(fill=tk.X)
-
-        progress_container = ttk.Frame(main_container, padding=16)
-        progress_container.pack(fill=tk.X, pady=(16, 0))
-
-        ttk.Label(progress_container, text=get_text("progress"), style="TLabel").pack(
-            side=tk.LEFT
-        )
-        self.progress = ttk.Progressbar(
-            progress_container, mode="determinate", length=400
-        )
-        self.progress.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=12)
-
-        speed_container = ttk.Frame(main_container, padding=(0, 0, 0, 8))
-        speed_container.pack(fill=tk.X)
-
-        self.transfer_speed_label = ttk.Label(
-            speed_container,
-            text=f"{get_text('speed')} --",
-            style="Bold.TLabel",
-            font=("Ubuntu", 10, "normal"),
-        )
-        self.transfer_speed_label.pack(side=tk.LEFT, padx=(12, 0))
-        self.remaining_time_label = ttk.Label(
-            speed_container,
-            text=f"{get_text('remaining')} --",
-            style="Bold.TLabel",
-            font=("Ubuntu", 10, "normal"),
-        )
-        self.remaining_time_label.pack(side=tk.LEFT, padx=(24, 0))
-
-        log_container = ttk.Frame(main_container, padding=(16, 16, 16, 0))
-        log_container.pack(fill=tk.BOTH, expand=True)
-
-        ttk.Label(
-            log_container,
-            text=get_text("log"),
-            style="Header.TLabel",
-        ).pack(anchor=tk.W, pady=(0, 8))
-        self.log_text = scrolledtext.ScrolledText(
-            log_container,
-            height=6,
-            state="disabled",
-            font=("Ubuntu", 9),
-            bg=self.colors["card_bg"],
-            fg=self.colors["text"],
-            relief="flat",
-            borderwidth=0,
-            highlightthickness=0,
-        )
-        self.log_text.pack(fill=tk.BOTH, expand=True)
+        self.status_label.pack()
 
     def _start_services(self):
         self.discovery = DiscoveryService(self.my_name, self._on_devices_update)
-        self.discovery.set_log_callback(self._log)
         self.discovery.start()
+
+        # Load saved manual devices from history
+        device_history = load_device_history()
+        for device in device_history:
+            if device.get("manual") and device.get("ip"):
+                self.discovery.add_manual_device(
+                    device["ip"],
+                    device.get("name", f"{get_text('manual_device')} ({device['ip']})")
+                )
 
         self.server = TransferServer(
             self.save_dir,
             self._on_progress,
-            self._log,
+            print,
             self._on_speed,
             self._on_device_received,
         )
         self.server.root_ref = self.root
         self.server.start()
 
-        self._log(f"{get_text('service_started')} {self.save_dir}")
-        self._log(get_text("cross_subnet_hint"))
+        print(f"{get_text('service_started')} {self.save_dir}")
+        print(get_text("cross_subnet_hint"))
 
     def _browse_dir(self):
         d = filedialog.askdirectory(initialdir=self.save_dir)
@@ -1644,7 +1580,7 @@ class MainWindow:
                 f"{len(files)} {get_text('selected_files')} {os.path.basename(files[0])} ...",
             )
             self.transfer_queue = list(files)
-            self._log(f"{get_text('selected_files')} {len(files)}")
+            print(f"{get_text('selected_files')} {len(files)}")
 
     def _add_manual_device(self):
         ip = self.manual_ip_entry.get().strip()
@@ -1658,15 +1594,27 @@ class MainWindow:
             messagebox.showwarning("", get_text("invalid_ip"))
             return
 
+        # Add to discovery
         self.discovery.add_manual_device(ip, name if name else None)
+
+        # Save to IP history
         add_to_ip_history(ip)
+
+        # Save to device history for persistence across restarts
+        device_info = {
+            "ip": ip,
+            "name": name if name else f"{get_text('manual_device')} ({ip})",
+            "manual": True,
+            "last_seen": time.time()
+        }
+        add_to_device_history(device_info)
 
         ip_history = load_ip_history()
         self.manual_ip_entry["values"] = ip_history
 
         self.manual_ip_entry.delete(0, tk.END)
         self.manual_name_entry.delete(0, tk.END)
-        self._log(f"{get_text('added_device')} {ip}")
+        print(f"{get_text('added_device')} {ip}")
 
     def _scan_network(self):
         """扫描网络"""
@@ -1689,7 +1637,7 @@ class MainWindow:
         if new_lang != current_lang:
             current_lang = new_lang
             save_config()
-            self.root.title(get_text("window_title"))
+        self.root.title(get_text("window_title") + " - DEBUG")
 
     def _remove_selected_device(self):
         sel = self.device_listbox.curselection()
@@ -1701,7 +1649,7 @@ class MainWindow:
 
         if device.get("manual", False):
             self.discovery.remove_device(ip)
-            self._log(f"{get_text('removed_device')} {ip}")
+            print(f"{get_text('removed_device')} {ip}")
         else:
             messagebox.showinfo("", get_text("only_remove_manual"))
 
@@ -1716,60 +1664,79 @@ class MainWindow:
     def _update_device_list(self):
         self.device_listbox.delete(0, tk.END)
         for d in self.devices:
-            # Green for: manual devices OR devices with recent last_seen (scanned)
-            is_online = (time.time() - d.get("last_seen", 0)) < BROADCAST_INTERVAL * 3
             is_manual = d.get("manual", False)
-            status_icon = "[O]" if is_online or is_manual else "[x]"
+            is_online = False
+            if not is_manual:
+                is_online = (time.time() - d.get("last_seen", 0)) < BROADCAST_INTERVAL * 3
 
             label = f"{d['name']} ({d['ip']})"
             if is_manual:
                 label += f" [{get_text('manual_device')}]"
+            
+            index = self.device_listbox.size()
             self.device_listbox.insert(tk.END, label)
+            if is_online or is_manual:
+                self.device_listbox.itemconfig(index, {'fg': 'green'})
+            else:
+                self.device_listbox.itemconfig(index, {'fg': 'red'})
 
     def _on_progress(self, value):
-        self.root.after(0, lambda: self.progress.configure(value=value))
+        # Ensure value is within valid range [0, 100]
+        clamped_value = max(0, min(100, value))
+        
+        # Store current progress for speed/remaining time calculations
+        self.current_progress = clamped_value
+
+        # Debug: log progress updates
+        print(f"DEBUG PROGRESS: {clamped_value}% (input: {value})")
+        self.root.after(0, lambda cv=clamped_value: self._update_progress_ui(cv))
+
+        # Reset transfer start time when starting a new transfer
+        if clamped_value > 0 and clamped_value < 100 and self.transfer_start_time is None:
+            self.transfer_start_time = time.time()
+            
+    def _update_progress_ui(self, clamped_value):
+        try:
+            current_speed = getattr(self, '_current_speed', '--')
+            current_remaining = getattr(self, '_current_remaining', '...')
+            self.status_label.configure(
+                text=f"进度: {int(clamped_value)}% | 速度: {current_speed} | 剩余: {current_remaining}"
+            )
+        except Exception as e:
+            print(f"DEBUG ERROR in _update_progress_ui: {e}")
 
     def _on_speed(self, speed):
-        if self.transfer_speed_label:
-            self.root.after(
-                0,
-                lambda: self.transfer_speed_label.configure(
-                    text=f"{get_text('speed')} {format_speed(speed)}"
-                ),
-            )
-
-        current_progress = self.progress["value"]
-        if (
-            current_progress > 0
-            and current_progress < 100
-            and self.remaining_time_label
-        ):
-            if self.transfer_start_time is None:
-                self.transfer_start_time = time.time()
-            elapsed = time.time() - self.transfer_start_time
-            if elapsed > 0:
-                speed = current_progress / elapsed  # % per second
-                remaining = (100 - current_progress) / speed if speed > 0 else 0
+        print(f"DEBUG SPEED: {speed}, progress: {self.current_progress}")
+        self.root.after(0, lambda s=speed: self._update_speed_ui(s))
+            
+    def _update_speed_ui(self, speed):
+        try:
+            self._current_speed = format_speed(speed)
+            current_progress = self.current_progress
+            
+            if (current_progress > 0 and current_progress < 100 and 
+                self.transfer_start_time is not None and speed > 0):
+                elapsed = time.time() - self.transfer_start_time
+                if elapsed > 0:
+                    estimated_total_time = elapsed / (current_progress / 100)
+                    remaining_time = estimated_total_time - elapsed
+                    if remaining_time > 0:
+                        self._current_remaining = format_duration(remaining_time)
+                    else:
+                        self._current_remaining = "--"
+                else:
+                    self._current_remaining = "..."
+            elif current_progress >= 100 and self.transfer_start_time is not None:
+                self.transfer_start_time = None
+                self._current_remaining = "--"
             else:
-                remaining = 0
-            self.root.after(
-                0,
-                lambda: self.remaining_time_label.configure(
-                    text=f"{get_text('remaining')} {format_duration(remaining)}"
-                ),
+                self._current_remaining = "..."
+            
+            self.status_label.configure(
+                text=f"进度: {int(current_progress)}% | 速度: {self._current_speed} | 剩余: {self._current_remaining}"
             )
-        elif current_progress >= 100 and self.transfer_start_time is not None:
-            self.transfer_start_time = None
-
-    def _log(self, msg):
-        ts = datetime.now().strftime("%H:%M:%S")
-        self.root.after(0, lambda: self._append_log(f"[{ts}] {msg}"))
-
-    def _append_log(self, msg):
-        self.log_text.config(state="normal")
-        self.log_text.insert(tk.END, msg + "\n")
-        self.log_text.see(tk.END)
-        self.log_text.config(state="disabled")
+        except Exception as e:
+            print(f"DEBUG ERROR in _update_speed_ui: {e}")
 
     def _send_file(self):
         filepath = self.file_entry.get()
@@ -1788,24 +1755,29 @@ class MainWindow:
             return
 
         target_ip = self.devices[sel[0]]["ip"]
-        self.progress.configure(value=0)
+        self.current_progress = 0
+        self._current_speed = "--"
+        self._current_remaining = "--"
+        self.status_label.configure(text="进度: 0% | 速度: -- | 剩余: --")
+        self.current_progress = 0
         self.transfer_start_time = None  # Reset transfer timer
 
         def send_next():
             if not files:
-                self._log(get_text("batch_transfer_complete"))
+                print(get_text("batch_transfer_complete"))
                 return
 
             file = files.pop(0)
-            self._log(f"{get_text('sending')} {os.path.basename(file)}")
+            print(f"{get_text('sending')} {os.path.basename(file)}")
 
-            self.client = TransferClient(self._on_progress, self._log, self._on_speed)
+            print("DEBUG: Creating TransferClient with speed callback")
+            self.client = TransferClient(self._on_progress, print, self._on_speed)
             success = self.client.send_file_with_retry(file, target_ip)
 
             if success:
                 self.root.after(1000, send_next)
             else:
-                self._log(f"{get_text('send_failed')} {os.path.basename(file)}")
+                print(f"{get_text('send_failed')} {os.path.basename(file)}")
 
         threading.Thread(target=send_next, daemon=True).start()
 
