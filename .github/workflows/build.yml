@@ -3,6 +3,8 @@ name: Build Executables
 on:
   push:
     branches: [master]
+    tags:
+      - 'v*'
   workflow_dispatch:
 
 permissions:
@@ -15,15 +17,12 @@ jobs:
         include:
           - os: ubuntu-latest
             name: linux
-            ext: ""
             path: dist/SimpleTransferEnhanced
           - os: windows-latest
             name: windows
-            ext: .exe
             path: dist/SimpleTransferEnhanced.exe
           - os: macos-latest
             name: macos
-            ext: .app
             path: dist/SimpleTransferEnhanced.app
 
     runs-on: ${{ matrix.os }}
@@ -52,9 +51,7 @@ jobs:
 
   release:
     needs: build
-    if: github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
 
@@ -66,9 +63,6 @@ jobs:
       - name: Prepare files
         run: |
           cd artifacts
-          # Linux - already executable
-          # Windows - already .exe
-          # macOS - zip it
           if [ -d "SimpleTransferEnhanced-macos/SimpleTransferEnhanced.app" ]; then
             cd SimpleTransferEnhanced-macos
             zip -r ../SimpleTransferEnhanced-macos.zip SimpleTransferEnhanced.app
@@ -78,17 +72,24 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.3.1
-          name: "Simple Transfer Enhanced v1.3.1"
-          files: |
-            artifacts/SimpleTransferEnhanced-linux/SimpleTransferEnhanced
-            artifacts/SimpleTransferEnhanced-windows/SimpleTransferEnhanced.exe
-            artifacts/SimpleTransferEnhanced-macos/SimpleTransferEnhanced.app
           body: |
-            ## Downloads
-            - **Linux**: `chmod +x SimpleTransferEnhanced && ./SimpleTransferEnhanced`
-            - **Windows**: Run `SimpleTransferEnhanced.exe`
-            - **macOS**: Open `SimpleTransferEnhanced.app`
+            ## 📥 Downloads
+
+            | Platform | File |
+            |----------|------|
+            | 🐧 Linux | `SimpleTransferEnhanced` - Run `chmod +x && ./SimpleTransferEnhanced` |
+            | 🪟 Windows | `SimpleTransferEnhanced.exe` |
+            | 🍎 macOS | `SimpleTransferEnhanced.app` |
+
+            ## ✨ Features
+
+            - 🔍 Device Discovery - Auto-discover LAN devices
+            - 📁 Drag & Drop - Drop files directly to transfer
+            - 📋 Batch Transfer - Queue multiple files
+            - ⏸️ Resume Support - Continue interrupted transfers
+            - 📊 Real-time Progress - Speed and ETA display
+            - 🕐 IP History - Quick selection of recent IPs
+            - 🌐 Multi-language - Chinese & English
           draft: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

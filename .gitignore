@@ -9,5 +9,3 @@
 !*.py
 !*.spec
 !*.md
-!dist/
-!dist/*
