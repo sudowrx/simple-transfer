@@ -62,12 +62,41 @@ jobs:
 
       - name: Prepare files
         run: |
-          apt-get update -qq && apt-get install -y -qq zip > /dev/null 2>&1
-          if [ -d "artifacts/SimpleTransferEnhanced-macos" ]; then
-            cd artifacts/SimpleTransferEnhanced-macos
-            zip -r ../SimpleTransferEnhanced-macos.zip SimpleTransferEnhanced.app
-            cd ../..
+          echo "=== Checking artifact structure ==="
+          find artifacts/SimpleTransferEnhanced-macos -type f 2>/dev/null | head -20 || echo "No files found"
+
+          echo "=== Finding .app directory ==="
+          APP_PATH=$(find artifacts/SimpleTransferEnhanced-macos -name "SimpleTransferEnhanced.app" -type d 2>/dev/null | head -1)
+          echo "Found app at: $APP_PATH"
+
+          if [ -n "$APP_PATH" ]; then
+            APP_DIR=$(dirname "$APP_PATH")
+            echo "Creating zip from $APP_DIR"
+            python3 << EOF
+import zipfile, os, sys
+
+app_dir = "$APP_DIR"
+zip_path = "artifacts/SimpleTransferEnhanced-macos.zip"
+
+print(f"App dir: {app_dir}")
+print(f"Zip path: {zip_path}")
+
+os.chdir(app_dir)
+with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as z:
+    for root, dirs, files in os.walk('.'):
+        for f in files:
+            fp = os.path.join(root, f)
+            z.write(fp)
+            print(f"Added: {fp}")
+print("Done")
+EOF
+          else
+            echo "ERROR: SimpleTransferEnhanced.app not found"
+            find artifacts -type d 2>/dev/null
           fi
+
+          echo "=== Verifying zip ==="
+          ls -lh artifacts/SimpleTransferEnhanced-macos.zip 2>/dev/null || echo "Zip not found"
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
@@ -112,7 +141,7 @@ jobs:
           if [ -f "artifacts/SimpleTransferEnhanced-macos.zip" ]; then
             gh release upload ${{ github.ref_name }} artifacts/SimpleTransferEnhanced-macos.zip --clobber || echo "macOS upload failed"
           else
-            echo "macOS zip not found, checking..."
+            echo "macOS zip not found"
             ls -la artifacts/
           fi
           echo "=== Done ==="
