@@ -66,8 +66,23 @@ jobs:
           if [ -d "SimpleTransferEnhanced-macos/SimpleTransferEnhanced.app" ]; then
             cd SimpleTransferEnhanced-macos
             zip -r ../SimpleTransferEnhanced-macos.zip SimpleTransferEnhanced.app
-            cd ..
+            cd ../..
           fi
+
+      - name: Upload to Release
+        run: |
+          cd artifacts
+          if [ -f "SimpleTransferEnhanced-linux/SimpleTransferEnhanced" ]; then
+            gh release upload v1.0.0 SimpleTransferEnhanced-linux/SimpleTransferEnhanced --clobber
+          fi
+          if [ -f "SimpleTransferEnhanced-windows/SimpleTransferEnhanced.exe" ]; then
+            gh release upload v1.0.0 SimpleTransferEnhanced-windows/SimpleTransferEnhanced.exe --clobber
+          fi
+          if [ -f "SimpleTransferEnhanced-macos.zip" ]; then
+            gh release upload v1.0.0 SimpleTransferEnhanced-macos.zip --clobber
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
@@ -79,7 +94,7 @@ jobs:
             |----------|------|
             | 🐧 Linux | `SimpleTransferEnhanced` - Run `chmod +x && ./SimpleTransferEnhanced` |
             | 🪟 Windows | `SimpleTransferEnhanced.exe` |
-            | 🍎 macOS | `SimpleTransferEnhanced.app` |
+            | 🍎 macOS | `SimpleTransferEnhanced-macos.zip` |
 
             ## ✨ Features
 
