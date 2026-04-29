@@ -62,7 +62,8 @@ jobs:
 
       - name: Prepare files
         run: |
-          if [ -d "artifacts/SimpleTransferEnhanced-macos/SimpleTransferEnhanced.app" ]; then
+          apt-get update -qq && apt-get install -y -qq zip > /dev/null 2>&1
+          if [ -d "artifacts/SimpleTransferEnhanced-macos" ]; then
             cd artifacts/SimpleTransferEnhanced-macos
             zip -r ../SimpleTransferEnhanced-macos.zip SimpleTransferEnhanced.app
             cd ../..
