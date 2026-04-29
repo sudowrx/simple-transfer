@@ -69,21 +69,6 @@ jobs:
             cd ../..
           fi
 
-      - name: Upload to Release
-        run: |
-          cd artifacts
-          if [ -f "SimpleTransferEnhanced-linux/SimpleTransferEnhanced" ]; then
-            gh release upload ${{ github.ref_name }} SimpleTransferEnhanced-linux/SimpleTransferEnhanced --clobber
-          fi
-          if [ -f "SimpleTransferEnhanced-windows/SimpleTransferEnhanced.exe" ]; then
-            gh release upload ${{ github.ref_name }} SimpleTransferEnhanced-windows/SimpleTransferEnhanced.exe --clobber
-          fi
-          if [ -f "SimpleTransferEnhanced-macos.zip" ]; then
-            gh release upload ${{ github.ref_name }} SimpleTransferEnhanced-macos.zip --clobber
-          fi
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
@@ -106,5 +91,20 @@ jobs:
             - 🕐 IP History - Quick selection of recent IPs
             - 🌐 Multi-language - Chinese & English
           draft: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload to Release
+        run: |
+          cd artifacts
+          if [ -f "SimpleTransferEnhanced-linux/SimpleTransferEnhanced" ]; then
+            gh release upload ${{ github.ref_name }} SimpleTransferEnhanced-linux/SimpleTransferEnhanced --clobber
+          fi
+          if [ -f "SimpleTransferEnhanced-windows/SimpleTransferEnhanced.exe" ]; then
+            gh release upload ${{ github.ref_name }} SimpleTransferEnhanced-windows/SimpleTransferEnhanced.exe --clobber
+          fi
+          if [ -f "SimpleTransferEnhanced-macos.zip" ]; then
+            gh release upload ${{ github.ref_name }} SimpleTransferEnhanced-macos.zip --clobber
+          fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
