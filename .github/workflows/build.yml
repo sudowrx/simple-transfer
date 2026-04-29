@@ -95,14 +95,25 @@ jobs:
 
       - name: Upload to Release
         run: |
+          echo "=== Uploading Linux ==="
           if [ -f "artifacts/SimpleTransferEnhanced-linux/SimpleTransferEnhanced" ]; then
-            gh release upload ${{ github.ref_name }} artifacts/SimpleTransferEnhanced-linux/SimpleTransferEnhanced --clobber
+            gh release upload ${{ github.ref_name }} artifacts/SimpleTransferEnhanced-linux/SimpleTransferEnhanced --clobber || echo "Linux upload failed"
+          else
+            echo "Linux file not found"
           fi
+          echo "=== Uploading Windows ==="
           if [ -f "artifacts/SimpleTransferEnhanced-windows/SimpleTransferEnhanced.exe" ]; then
-            gh release upload ${{ github.ref_name }} artifacts/SimpleTransferEnhanced-windows/SimpleTransferEnhanced.exe --clobber
+            gh release upload ${{ github.ref_name }} artifacts/SimpleTransferEnhanced-windows/SimpleTransferEnhanced.exe --clobber || echo "Windows upload failed"
+          else
+            echo "Windows file not found"
           fi
+          echo "=== Uploading macOS ==="
           if [ -f "artifacts/SimpleTransferEnhanced-macos.zip" ]; then
-            gh release upload ${{ github.ref_name }} artifacts/SimpleTransferEnhanced-macos.zip --clobber
+            gh release upload ${{ github.ref_name }} artifacts/SimpleTransferEnhanced-macos.zip --clobber || echo "macOS upload failed"
+          else
+            echo "macOS zip not found, checking..."
+            ls -la artifacts/
           fi
+          echo "=== Done ==="
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
