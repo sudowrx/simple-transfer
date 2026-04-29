@@ -60,7 +60,7 @@ jobs:
 
       - name: Prepare files
         run: |
-          APP_DIR=$(find artifacts/SimpleTransferEnhanced-macos -name "SimpleTransferEnhanced.app" -type d -printf '%h' 2>/dev/null)
+          APP_DIR=$(find artifacts/SimpleTransferEnhanced-macos -name "Contents" -type d -printf '%h' 2>/dev/null | head -1)
           echo "Found app dir: $APP_DIR"
           if [ -n "$APP_DIR" ] && [ -d "$APP_DIR" ]; then
             printf 'import zipfile, os, sys\napp_dir = sys.argv[1]\nzip_path = sys.argv[2]\nos.chdir(app_dir)\nwith zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:\n    for r, d, f in os.walk("."):\n        for file in f:\n            fp = os.path.join(r, file)\n            z.write(fp)\nprint("Created:", zip_path)\n' > /tmp/create_zip.py
