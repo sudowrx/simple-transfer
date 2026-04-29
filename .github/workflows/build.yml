@@ -73,13 +73,13 @@ jobs:
         run: |
           cd artifacts
           if [ -f "SimpleTransferEnhanced-linux/SimpleTransferEnhanced" ]; then
-            gh release upload v1.0.0 SimpleTransferEnhanced-linux/SimpleTransferEnhanced --clobber
+            gh release upload v${{ github.ref_name }} SimpleTransferEnhanced-linux/SimpleTransferEnhanced --clobber
           fi
           if [ -f "SimpleTransferEnhanced-windows/SimpleTransferEnhanced.exe" ]; then
-            gh release upload v1.0.0 SimpleTransferEnhanced-windows/SimpleTransferEnhanced.exe --clobber
+            gh release upload v${{ github.ref_name }} SimpleTransferEnhanced-windows/SimpleTransferEnhanced.exe --clobber
           fi
           if [ -f "SimpleTransferEnhanced-macos.zip" ]; then
-            gh release upload v1.0.0 SimpleTransferEnhanced-macos.zip --clobber
+            gh release upload v${{ github.ref_name }} SimpleTransferEnhanced-macos.zip --clobber
           fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
